@@ -1,0 +1,40 @@
+<launch>
+
+    <!-- ================================================================ -->
+    <!-- VSLAM 在线运行 launch 文件                                        -->
+    <!-- 启动: roslaunch vslam vslam.launch                               -->
+    <!-- ================================================================ -->
+
+    <!-- 日志级别: ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
+    <arg name="verbosity"   default="INFO" />
+
+    <!-- 配置文件路径 -->
+    <arg name="config"      default="mynteye" />
+    <arg name="config_path" default="$(find vslam)/config/$(arg config)/estimator_config.yaml" />
+
+    <!-- 是否启动 RViz -->
+    <arg name="doviz"       default="true" />
+    <arg name="rviz_config" default="$(find vslam)/launch/display.rviz" />
+
+    <!-- 是否保存轨迹和计时 -->
+    <arg name="dotime"      default="false" />
+    <arg name="path_time"   default="/tmp/vslam_timing.txt" />
+
+
+    <!-- ================================================================ -->
+    <!-- VSLAM 主节点 -->
+    <!-- ================================================================ -->
+    <node name="ov_msckf" pkg="vslam" type="vslam_node" output="screen" required="true">
+        <param name="config_path" type="string" value="$(arg config_path)" />
+    </node>
+
+
+    <!-- ================================================================ -->
+    <!-- RViz 可视化 -->
+    <!-- ================================================================ -->
+    <group if="$(arg doviz)">
+        <node name="rviz" pkg="rviz" type="rviz" output="log" required="false"
+              args="-d $(arg rviz_config)" />
+    </group>
+
+</launch>

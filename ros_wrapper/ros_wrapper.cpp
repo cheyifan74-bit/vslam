@@ -144,7 +144,7 @@ namespace vslam
     message.wm << msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z;
     message.am << msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z;
 
-    viz_->onImu(message);
+    viz_->handleImuMeasurement(message);
   }
 
   void RosWrapper::callbackMonocular(const sensor_msgs::ImageConstPtr &msg, int cam_id)
@@ -176,7 +176,7 @@ namespace vslam
     }
 
     // Hand off to OpenVINS: rate limiting + queuing + processing — all internal
-    viz_->onCamera(message);
+    viz_->handleCameraMeasurement(message);
   }
 
   void RosWrapper::callbackStereo(const sensor_msgs::ImageConstPtr &msg0,
@@ -223,7 +223,7 @@ namespace vslam
     }
 
     // Hand off to OpenVINS
-    viz_->onCamera(message);
+    viz_->handleCameraMeasurement(message);
   }
 
 } // namespace vslam

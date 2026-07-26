@@ -1,0 +1,6 @@
+[submodule "open_vins"]
+	path = open_vins
+	url = https://github.com/cheyifan74-bit/open_vins
+[submodule "colmap"]
+	path = colmap
+	url = https://github.com/cheyifan74-bit/colmap

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="3">
+
+  <name>vslam</name>
+  <version>0.1.0</version>
+  <description>VSLAM system — ROS wrapper + application layer on top of OpenVINS</description>
+
+  <author email="cheyifan@example.com">che yifan</author>
+  <maintainer email="cheyifan@example.com">che yifan</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>message_filters</depend>
+  <depend>image_transport</depend>
+  <depend>tf</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <depend>ov_core</depend>
+  <depend>ov_msckf</depend>
+  <depend>ov_init</depend>
+
+  <depend>eigen</depend>
+  <depend>libopencv-dev</depend>
+  <depend>boost</depend>
+
+  <export>
+    <build_type>catkin</build_type>
+  </export>
+
+</package>

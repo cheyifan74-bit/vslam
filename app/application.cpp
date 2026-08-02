@@ -2,7 +2,7 @@
  * @Description: Application class implementation
  * @Author: che yifan
  * @Date: 2026-07-26 09:39:40
- * @LastEditTime: 2026-07-26 09:39:45
+ * @LastEditTime: 2026-07-26 22:14:03
  * @LastEditors: che yifan
  * @Reference:
  */
@@ -54,6 +54,7 @@ namespace vslam
 
     // Step 2: Load all VIO parameters from config file
     ov_msckf::VioManagerOptions params;
+    params.use_multi_threading_subs = true;
     params.print_and_load(parser);
 
     // Step 3: Verify all required parameters were successfully parsed

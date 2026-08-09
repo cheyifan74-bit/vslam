@@ -8,7 +8,7 @@
     <!-- 日志级别: ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
     <arg name="verbosity"   default="INFO" />
 
-    <!-- 配置文件路径 -->
+    <!-- 配置文件路径（同目录下还有 kalibr_*.yaml 与 vslam.yaml） -->
     <arg name="config"      default="mynteye" />
     <arg name="config_path" default="$(find vslam)/config/$(arg config)/estimator_config.yaml" />
 
@@ -23,6 +23,7 @@
 
     <!-- ================================================================ -->
     <!-- VSLAM 主节点 -->
+    <!-- Keyframe 参数请改 config/$(arg config)/vslam.yaml，勿用 ROS param -->
     <!-- ================================================================ -->
     <node name="ov_msckf" pkg="vslam" type="vslam_node" output="screen" required="true">
         <param name="config_path" type="string" value="$(arg config_path)" />

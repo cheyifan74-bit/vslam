@@ -1,0 +1,31 @@
+%YAML:1.0 # need to specify the file type at the top!
+
+# ==================================================================
+# VSLAM application parameters (non-OpenVINS)
+# ==================================================================
+
+# ------------------------------------------------------------------
+# KeyframeSelect
+# Images are fed by RosWrapper (left camera only).
+# Pose is subscribed from OpenVINS pose topic.
+# ------------------------------------------------------------------
+
+# Selection thresholds
+kf_dist_thresh: 1.0          # meters; select if translation from last KF exceeds this
+kf_angle_thresh_deg: 20.0    # degrees; select if rotation from last KF exceeds this
+
+# Image-pose timestamp sync
+kf_sync_slop: 0.02           # seconds; max |t_image - t_pose| to pair
+
+# Internal buffers
+kf_pose_queue_size: 50
+kf_image_queue_size: 10
+kf_output_queue_size: 20     # downstream KeyframeQueue capacity (drop oldest if full)
+
+# Topics
+kf_topic_pose: "/ov_msckf/poseimu"
+kf_topic_keyframe_pose: "keyframe_pose"
+kf_topic_keyframe_image: "keyframe_image"
+
+# Publish selected keyframe pose/image for debugging / rosbag analysis
+kf_publish_debug: true

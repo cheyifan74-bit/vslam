@@ -2,13 +2,15 @@
  * @Description: Application class implementation
  * @Author: che yifan
  * @Date: 2026-07-26 09:39:40
- * @LastEditTime: 2026-07-26 22:14:03
+ * @LastEditTime: 2026-08-02
  * @LastEditors: che yifan
  * @Reference:
  */
 #include "application.h"
 
 #include <iostream>
+
+#include "keyframe_select/keyframe_select.h"
 
 #include "utils/opencv_yaml_parse.h"
 #include "utils/print.h"
@@ -17,18 +19,18 @@
 namespace vslam
 {
 
-  Application::Application(const std::string &config_path)
+  Application::Application(const std::string &config_path) : config_path_(config_path)
   {
     initOpenVINS(config_path);
 
     if (!vioInitialized())
     {
       PRINT_ERROR("[APP]: OpenVINS initialization failed!\n");
+      return;
     }
-    else
-    {
-      PRINT_INFO("[APP]: OpenVINS initialized successfully.\n");
-    }
+
+    PRINT_INFO("[APP]: OpenVINS initialized successfully.\n");
+    initKeyframeSelect();
   }
 
   bool Application::vioInitialized() const
@@ -41,32 +43,94 @@ namespace vslam
     return vio_manager_;
   }
 
+  std::shared_ptr<KeyframeSelect> Application::getKeyframeSelect() const
+  {
+    return keyframe_select_;
+  }
+
+  std::shared_ptr<KeyframeQueue> Application::getKeyframeQueue() const
+  {
+    return keyframe_select_ ? keyframe_select_->getKeyframeQueue() : nullptr;
+  }
+
+  const KeyframeSelectConfig &Application::getKeyframeSelectConfig() const
+  {
+    return kf_config_;
+  }
+
+  std::string Application::resolveVslamConfigPath(const std::string &estimator_config_path)
+  {
+    const auto pos = estimator_config_path.find_last_of("/\\");
+    if (pos == std::string::npos)
+    {
+      return "vslam.yaml";
+    }
+    return estimator_config_path.substr(0, pos + 1) + "vslam.yaml";
+  }
+
+  bool Application::loadKeyframeSelectConfig(KeyframeSelectConfig &kf_cfg) const
+  {
+    const std::string vslam_yaml = resolveVslamConfigPath(config_path_);
+    PRINT_INFO("[APP]: Loading VSLAM config from: %s\n", vslam_yaml.c_str());
+
+    auto parser = std::make_shared<ov_core::YamlParser>(vslam_yaml);
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to open vslam.yaml: %s\n" RESET, vslam_yaml.c_str());
+      return false;
+    }
+
+    parser->parse_config("kf_dist_thresh", kf_cfg.dist_thresh, false);
+    parser->parse_config("kf_angle_thresh_deg", kf_cfg.angle_thresh_deg, false);
+    parser->parse_config("kf_sync_slop", kf_cfg.sync_slop, false);
+    parser->parse_config("kf_pose_queue_size", kf_cfg.pose_queue_size, false);
+    parser->parse_config("kf_image_queue_size", kf_cfg.image_queue_size, false);
+    parser->parse_config("kf_output_queue_size", kf_cfg.output_queue_size, false);
+    parser->parse_config("kf_topic_pose", kf_cfg.topic_pose, false);
+    parser->parse_config("kf_topic_keyframe_pose", kf_cfg.topic_keyframe_pose, false);
+    parser->parse_config("kf_topic_keyframe_image", kf_cfg.topic_keyframe_image, false);
+    parser->parse_config("kf_publish_debug", kf_cfg.publish_debug, false);
+
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to parse parameters from vslam.yaml!\n" RESET);
+      return false;
+    }
+
+    return true;
+  }
+
+  void Application::initKeyframeSelect()
+  {
+    if (!loadKeyframeSelectConfig(kf_config_))
+    {
+      PRINT_ERROR(RED "[APP]: KeyframeSelect will use in-code defaults (vslam.yaml load failed).\n" RESET);
+    }
+
+    keyframe_select_ = std::make_shared<KeyframeSelect>(kf_config_);
+    PRINT_INFO("[APP]: KeyframeSelect module created.\n");
+  }
+
   void Application::initOpenVINS(const std::string &config_path)
   {
-    // Step 1: Create YAML parser to load configuration
     PRINT_INFO("[APP]: Loading OpenVINS configuration from: %s\n", config_path.c_str());
     auto parser = std::make_shared<ov_core::YamlParser>(config_path);
 
-    // Set verbosity level (optional, defaults to DEBUG)
     std::string verbosity = "INFO";
     parser->parse_config("verbosity", verbosity, false);
     ov_core::Printer::setPrintLevel(verbosity);
 
-    // Step 2: Load all VIO parameters from config file
     ov_msckf::VioManagerOptions params;
     params.use_multi_threading_subs = true;
     params.print_and_load(parser);
 
-    // Step 3: Verify all required parameters were successfully parsed
     if (!parser->successful())
     {
       PRINT_ERROR(RED "[APP]: Failed to parse all parameters from config file!\n" RESET);
       return;
     }
 
-    // Step 4: Create the VIO manager instance
     vio_manager_ = std::make_shared<ov_msckf::VioManager>(params);
-
     PRINT_INFO("[APP]: OpenVINS VioManager created.\n");
   }
 

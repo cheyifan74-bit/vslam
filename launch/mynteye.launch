@@ -1,0 +1,28 @@
+<launch>
+
+    <!-- ================================================================ -->
+    <!-- MyntEye 便捷入口：转发到 vslam.launch                             -->
+    <!-- 启动: roslaunch vslam mynteye.launch                             -->
+    <!-- 说明: 不要用 open_vins/ov_msckf/launch/mynteye.launch             -->
+    <!--       那个文件依赖独立包 ov_msckf，本工程未作为独立包安装          -->
+    <!-- ================================================================ -->
+
+    <arg name="verbosity"   default="INFO" />
+    <arg name="config"      default="mynteye" />
+    <arg name="config_path" default="$(find vslam)/config/$(arg config)/estimator_config.yaml" />
+    <arg name="doviz"       default="true" />
+    <arg name="rviz_config" default="$(find vslam)/launch/display.rviz" />
+    <arg name="dotime"      default="false" />
+    <arg name="path_time"   default="/tmp/vslam_timing.txt" />
+
+    <include file="$(find vslam)/launch/vslam.launch">
+        <arg name="verbosity"   value="$(arg verbosity)" />
+        <arg name="config"      value="$(arg config)" />
+        <arg name="config_path" value="$(arg config_path)" />
+        <arg name="doviz"       value="$(arg doviz)" />
+        <arg name="rviz_config" value="$(arg rviz_config)" />
+        <arg name="dotime"      value="$(arg dotime)" />
+        <arg name="path_time"   value="$(arg path_time)" />
+    </include>
+
+</launch>

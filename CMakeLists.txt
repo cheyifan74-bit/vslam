@@ -20,6 +20,7 @@ find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
+  geometry_msgs
   cv_bridge
   message_filters
   image_transport
@@ -36,6 +37,7 @@ catkin_package(
   CATKIN_DEPENDS
     roscpp
     sensor_msgs
+    geometry_msgs
     cv_bridge
     message_filters
     image_transport
@@ -62,6 +64,9 @@ include_directories(
 add_executable(vslam_node
   app/application.cpp
   ros_wrapper/ros_wrapper.cpp
+  keyframe_select/keyframe_selector.cpp
+  keyframe_select/keyframe_select.cpp
+  utility/math_utils.cpp
 )
 
 target_link_libraries(vslam_node

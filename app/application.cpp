@@ -15,7 +15,8 @@
 namespace vslam
 {
 
-  Application::Application(const std::string &config_path) : config_path_(config_path)
+  Application::Application(const std::string &config_path, const std::string &verbosity)
+      : config_path_(config_path), verbosity_override_(verbosity)
   {
     initOpenVINS(config_path);
 
@@ -247,6 +248,10 @@ namespace vslam
 
     std::string verbosity = "INFO";
     parser->parse_config("verbosity", verbosity, false);
+    if (!verbosity_override_.empty())
+    {
+      verbosity = verbosity_override_;
+    }
     ov_core::Printer::setPrintLevel(verbosity);
 
     ov_msckf::VioManagerOptions params;

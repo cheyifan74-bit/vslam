@@ -28,8 +28,9 @@ namespace vslam
     /**
      * @brief Constructor: initializes OpenVINS / KeyframeSelect / MapManager
      * @param config_path Path to estimator_config.yaml (sibling vslam.yaml is also loaded)
+     * @param verbosity If non-empty, overrides estimator_config.yaml verbosity
      */
-    explicit Application(const std::string &config_path);
+    explicit Application(const std::string &config_path, const std::string &verbosity = "");
 
     /// Returns true if the OpenVINS VIO system has been successfully initialized
     bool vioInitialized() const;
@@ -67,6 +68,7 @@ namespace vslam
     bool loadCameraParams(std::vector<CameraParams> &cameras) const;
 
     std::string config_path_; ///< path to estimator_config.yaml
+    std::string verbosity_override_; ///< from launch/ROS param; empty → use yaml
     KeyframeSelectConfig kf_config_;
     MapManagerConfig map_config_;
 

@@ -13,7 +13,7 @@
 #include <boost/filesystem.hpp>
 
 #include "colmap/scene/camera.h"
-#include "colmap/scene/database.h"
+#include "colmap/scene/database_session.h"
 #include "colmap/sensor/models.h"
 
 #include "utils/print.h"
@@ -148,8 +148,7 @@ namespace vslam
   {
     try
     {
-      // colmap::Database::Open creates tables (WAL / foreign_keys / schema).
-      auto db = colmap::Database::Open(database_path_);
+      colmap::DatabaseSession db(database_path_);
 
       for (std::size_t i = 0; i < cameras_.size(); ++i)
       {
@@ -174,8 +173,6 @@ namespace vslam
         PRINT_INFO("[MAP]: camera %u: %dx%d fx=%.2f model=%s\n",
                    static_cast<unsigned>(cam_id), p.width, p.height, p.fx, model_name.c_str());
       }
-
-      db->Close();
     }
     catch (const std::exception &e)
     {

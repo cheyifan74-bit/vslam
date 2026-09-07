@@ -26,6 +26,7 @@
     <!-- Keyframe 参数请改 config/$(arg config)/vslam.yaml，勿用 ROS param -->
     <!-- ================================================================ -->
     <node name="ov_msckf" pkg="vslam" type="vslam_node" output="screen" required="true">
+        <param name="verbosity"   type="string" value="$(arg verbosity)" />
         <param name="config_path" type="string" value="$(arg config_path)" />
     </node>
 

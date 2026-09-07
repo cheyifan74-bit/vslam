@@ -34,4 +34,10 @@ namespace vslam
     return camera_pose;
   }
 
+  colmap::Rigid3d vioCamFromWorld(const Pose3d &pose)
+  {
+    const colmap::Rigid3d world_from_cam(pose.orientation.normalized(), pose.position);
+    return colmap::Inverse(world_from_cam);
+  }
+
 } // namespace vslam

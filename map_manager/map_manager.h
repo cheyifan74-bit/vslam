@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -16,6 +17,11 @@
 #include "keyframe_select/keyframe.h"
 #include "keyframe_select/keyframe_queue.h"
 #include "map_manager/map.h"
+
+namespace colmap
+{
+  class OnlineIncrementalMapper;
+}
 
 namespace vslam
 {
@@ -30,7 +36,7 @@ namespace vslam
    * @brief Owns a Map session and consumes KeyframeQueue.
    *
    * Map owns directories + COLMAP database.
-   * MapManager fills the session (currently: save left keyframe images).
+   * MapManager saves images, WriteImage, then calls OnlineIncrementalMapper::Process.
    */
   class MapManager
   {
@@ -44,7 +50,7 @@ namespace vslam
     /// Create Map and initialize directories + database.
     bool createMap();
 
-    /// Save keyframe image into Map session (left camera for now).
+    /// Save left image, register it in database.db, then Process() the mapper.
     bool addKeyframe(const Keyframe &keyframe);
 
     void startKeyframeConsumer(const std::shared_ptr<KeyframeQueue> &keyframe_queue);
@@ -57,9 +63,14 @@ namespace vslam
   private:
     void keyframeConsumerLoop();
     bool saveKeyframeImage(const Keyframe &keyframe, const std::string &abs_image_path) const;
+    /// Open DB (path lock) → WriteImage → Close. Returns COLMAP image_id, or 0 on failure.
+    uint32_t writeKeyframeImage(const Map &map,
+                                const Keyframe &keyframe,
+                                const std::string &relative_name) const;
 
     MapManagerConfig config_;
     std::shared_ptr<Map> map_;
+    std::unique_ptr<colmap::OnlineIncrementalMapper> incremental_mapper_;
     std::size_t frame_count_ = 0;
 
     std::shared_ptr<KeyframeQueue> keyframe_queue_;

@@ -6,9 +6,18 @@
 #include "map_manager/map_manager.h"
 
 #include <chrono>
+#include <exception>
+#include <optional>
 
 #include <opencv2/imgcodecs.hpp>
 
+#include "colmap/geometry/rigid3.h"
+#include "colmap/scene/database_session.h"
+#include "colmap/scene/image.h"
+#include "colmap/sfm/online_incremental_mapper.h"
+#include "colmap/util/types.h"
+
+#include "utility/math_utils.h"
 #include "utils/print.h"
 
 namespace vslam
@@ -21,12 +30,15 @@ namespace vslam
   bool MapManager::createMap()
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    incremental_mapper_.reset();
     map_ = std::make_shared<Map>(config_.map, config_.cameras);
     if (!map_->initialize())
     {
       map_.reset();
       return false;
     }
+    incremental_mapper_ =
+        std::make_unique<colmap::OnlineIncrementalMapper>(map_->databasePath());
     frame_count_ = 0;
     PRINT_INFO("[MAP_MANAGER]: Map session created.\n");
     return true;
@@ -58,16 +70,63 @@ namespace vslam
     return true;
   }
 
+  uint32_t MapManager::writeKeyframeImage(const Map &map,
+                                          const Keyframe &keyframe,
+                                          const std::string &relative_name) const
+  {
+    try
+    {
+      colmap::DatabaseSession db(map.databasePath());
+      if (db->ExistsImageWithName(relative_name))
+      {
+        const auto existing = db->ReadImageWithName(relative_name);
+        if (!existing.has_value())
+        {
+          PRINT_ERROR("[MAP_MANAGER]: ExistsImageWithName but Read failed: %s\n",
+                      relative_name.c_str());
+          return 0;
+        }
+        return existing->ImageId();
+      }
+
+      const colmap::camera_t camera_id =
+          static_cast<colmap::camera_t>(keyframe.cam_id + 1);
+      if (!db->ExistsCamera(camera_id))
+      {
+        PRINT_ERROR("[MAP_MANAGER]: camera_id=%u not in database\n",
+                    static_cast<unsigned>(camera_id));
+        return 0;
+      }
+
+      colmap::Image image;
+      image.SetName(relative_name);
+      image.SetCameraId(camera_id);
+      const colmap::image_t image_id = db->WriteImage(image);
+      PRINT_INFO("[MAP_MANAGER]: WriteImage name=%s image_id=%u camera_id=%u\n",
+                 relative_name.c_str(),
+                 static_cast<unsigned>(image_id),
+                 static_cast<unsigned>(camera_id));
+      return image_id;
+    }
+    catch (const std::exception &e)
+    {
+      PRINT_ERROR("[MAP_MANAGER]: WriteImage failed: %s\n", e.what());
+      return 0;
+    }
+  }
+
   bool MapManager::addKeyframe(const Keyframe &keyframe)
   {
     std::shared_ptr<Map> map;
+    colmap::OnlineIncrementalMapper *mapper = nullptr;
     std::size_t frame_index = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       map = map_;
-      if (!map || !map->isReady())
+      mapper = incremental_mapper_.get();
+      if (!map || !map->isReady() || mapper == nullptr)
       {
-        PRINT_ERROR("[MAP_MANAGER]: addKeyframe failed, map is not ready.\n");
+        PRINT_ERROR("[MAP_MANAGER]: addKeyframe failed, map/mapper is not ready.\n");
         return false;
       }
       frame_index = frame_count_;
@@ -75,6 +134,7 @@ namespace vslam
 
     const std::string file_name = map->makeImageFileName(frame_index, keyframe.timestamp);
     const std::string abs_path = map->makeImageAbsPath(/*left=*/true, file_name);
+    const std::string relative_name = map->makeImageRelativeName(/*left=*/true, file_name);
 
     if (map->config().save_images)
     {
@@ -84,14 +144,29 @@ namespace vslam
       }
     }
 
+    const uint32_t image_id = writeKeyframeImage(*map, keyframe, relative_name);
+    if (image_id == 0)
+    {
+      return false;
+    }
+
     {
       std::lock_guard<std::mutex> lock(mutex_);
       ++frame_count_;
     }
 
-    PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s (total=%zu)\n",
+    const std::optional<colmap::Rigid3d> vio_prior = vioCamFromWorld(keyframe.pose);
+    if (!mapper->Process(image_id, abs_path, vio_prior))
+    {
+      PRINT_WARNING("[MAP_MANAGER]: Process failed for image_id=%u (image is in DB)\n",
+                    static_cast<unsigned>(image_id));
+    }
+
+    PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s image_id=%u (total=%zu)\n",
                static_cast<unsigned long long>(keyframe.id),
-               map->makeImageRelativeName(true, file_name).c_str(), frame_index + 1);
+               relative_name.c_str(),
+               static_cast<unsigned>(image_id),
+               frame_index + 1);
     return true;
   }
 

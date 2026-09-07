@@ -29,3 +29,14 @@ kf_topic_keyframe_image: "keyframe_image"
 
 # Publish selected keyframe pose/image for debugging / rosbag analysis
 kf_publish_debug: true
+
+# ------------------------------------------------------------------
+# Map / MapManager
+# Map: create COLMAP dirs + database.db (+ cameras)
+# MapManager: consume keyframes and save images into the session
+# Layout: <map_root_dir>/map/{database,images,masks,sparse}
+# ------------------------------------------------------------------
+map_root_dir: "/tmp/vslam_map"
+map_clear_old_session: true
+map_save_images: true
+map_image_extension: "png"

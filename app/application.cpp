@@ -2,19 +2,15 @@
  * @Description: Application class implementation
  * @Author: che yifan
  * @Date: 2026-07-26 09:39:40
- * @LastEditTime: 2026-08-02
+ * @LastEditTime: 2026-08-16
  * @LastEditors: che yifan
  * @Reference:
  */
 #include "application.h"
-
-#include <iostream>
-
 #include "keyframe_select/keyframe_select.h"
 
 #include "utils/opencv_yaml_parse.h"
 #include "utils/print.h"
-#include "utils/sensor_data.h"
 
 namespace vslam
 {
@@ -31,6 +27,7 @@ namespace vslam
 
     PRINT_INFO("[APP]: OpenVINS initialized successfully.\n");
     initKeyframeSelect();
+    initMapManager();
   }
 
   bool Application::vioInitialized() const
@@ -56,6 +53,16 @@ namespace vslam
   const KeyframeSelectConfig &Application::getKeyframeSelectConfig() const
   {
     return kf_config_;
+  }
+
+  std::shared_ptr<MapManager> Application::getMapManager() const
+  {
+    return map_manager_;
+  }
+
+  const MapManagerConfig &Application::getMapManagerConfig() const
+  {
+    return map_config_;
   }
 
   std::string Application::resolveVslamConfigPath(const std::string &estimator_config_path)
@@ -100,6 +107,95 @@ namespace vslam
     return true;
   }
 
+  bool Application::loadCameraParams(std::vector<CameraParams> &cameras) const
+  {
+    auto parser = std::make_shared<ov_core::YamlParser>(config_path_);
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to open estimator config for cameras: %s\n" RESET,
+                  config_path_.c_str());
+      return false;
+    }
+
+    int max_cameras = 2;
+    parser->parse_config("max_cameras", max_cameras, false);
+
+    cameras.clear();
+    cameras.reserve(static_cast<std::size_t>(max_cameras));
+
+    for (int i = 0; i < max_cameras; ++i)
+    {
+      const std::string cam_name = "cam" + std::to_string(i);
+      CameraParams cp;
+
+      std::vector<double> intrinsics = {cp.fx, cp.fy, cp.cx, cp.cy};
+      std::vector<int> resolution = {cp.width, cp.height};
+      std::vector<double> distortion = {0, 0, 0, 0};
+
+      parser->parse_external("relative_config_imucam", cam_name, "intrinsics", intrinsics, false);
+      parser->parse_external("relative_config_imucam", cam_name, "resolution", resolution, false);
+      parser->parse_external("relative_config_imucam", cam_name, "distortion_model",
+                             cp.distortion_model, false);
+      parser->parse_external("relative_config_imucam", cam_name, "distortion_coeffs", distortion,
+                             false);
+
+      if (intrinsics.size() >= 4)
+      {
+        cp.fx = intrinsics[0];
+        cp.fy = intrinsics[1];
+        cp.cx = intrinsics[2];
+        cp.cy = intrinsics[3];
+      }
+      if (resolution.size() >= 2)
+      {
+        cp.width = resolution[0];
+        cp.height = resolution[1];
+      }
+      if (distortion.size() >= 4)
+      {
+        cp.k1 = distortion[0];
+        cp.k2 = distortion[1];
+        cp.k3 = distortion[2];
+        cp.k4 = distortion[3];
+      }
+
+      cameras.push_back(cp);
+    }
+
+    return !cameras.empty();
+  }
+
+  bool Application::loadMapManagerConfig(MapManagerConfig &map_cfg) const
+  {
+    const std::string vslam_yaml = resolveVslamConfigPath(config_path_);
+    auto parser = std::make_shared<ov_core::YamlParser>(vslam_yaml);
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to open vslam.yaml for MapManager: %s\n" RESET,
+                  vslam_yaml.c_str());
+      return false;
+    }
+
+    parser->parse_config("map_root_dir", map_cfg.map.map_root_dir, false);
+    parser->parse_config("map_clear_old_session", map_cfg.map.clear_old_session, false);
+    parser->parse_config("map_save_images", map_cfg.map.save_images, false);
+    parser->parse_config("map_image_extension", map_cfg.map.image_extension, false);
+
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to parse MapManager parameters from vslam.yaml!\n" RESET);
+      return false;
+    }
+
+    if (!loadCameraParams(map_cfg.cameras))
+    {
+      PRINT_ERROR(RED "[APP]: Failed to load camera params for Map.\n" RESET);
+      return false;
+    }
+
+    return true;
+  }
+
   void Application::initKeyframeSelect()
   {
     if (!loadKeyframeSelectConfig(kf_config_))
@@ -109,6 +205,39 @@ namespace vslam
 
     keyframe_select_ = std::make_shared<KeyframeSelect>(kf_config_);
     PRINT_INFO("[APP]: KeyframeSelect module created.\n");
+  }
+
+  void Application::initMapManager()
+  {
+    if (!loadMapManagerConfig(map_config_))
+    {
+      PRINT_ERROR(RED "[APP]: MapManager will use in-code defaults (vslam.yaml load failed).\n" RESET);
+      // Still try to load cameras if yaml partially failed.
+      if (map_config_.cameras.empty())
+      {
+        loadCameraParams(map_config_.cameras);
+      }
+    }
+
+    map_manager_ = std::make_shared<MapManager>(map_config_);
+    if (!map_manager_->createMap())
+    {
+      PRINT_ERROR(RED "[APP]: MapManager createMap() failed!\n" RESET);
+      map_manager_.reset();
+      return;
+    }
+
+    auto kf_queue = getKeyframeQueue();
+    if (kf_queue)
+    {
+      map_manager_->startKeyframeConsumer(kf_queue);
+    }
+    else
+    {
+      PRINT_ERROR(RED "[APP]: KeyframeQueue is null, MapManager consumer not started.\n" RESET);
+    }
+
+    PRINT_INFO("[APP]: MapManager module created.\n");
   }
 
   void Application::initOpenVINS(const std::string &config_path)

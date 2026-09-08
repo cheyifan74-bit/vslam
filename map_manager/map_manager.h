@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -26,10 +27,27 @@ namespace colmap
 namespace vslam
 {
 
+  struct SiftExtractConfig
+  {
+    bool use_gpu = false;
+    std::string gpu_index = "-1";
+    int max_num_features = 8192;
+    int first_octave = -1;
+    int num_octaves = 4;
+    int octave_resolution = 3;
+    double peak_threshold = 0.02 / 3.0;
+    double edge_threshold = 10.0;
+    bool estimate_affine_shape = false;
+    int max_num_orientations = 2;
+    bool upright = false;
+    int max_image_size = -1;
+  };
+
   struct MapManagerConfig
   {
     MapConfig map;
     std::vector<CameraParams> cameras;
+    SiftExtractConfig sift;
   };
 
   /**

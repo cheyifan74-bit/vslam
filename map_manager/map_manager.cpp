@@ -11,6 +11,8 @@
 
 #include <opencv2/imgcodecs.hpp>
 
+#include "colmap/feature/extractor.h"
+#include "colmap/feature/sift.h"
 #include "colmap/geometry/rigid3.h"
 #include "colmap/scene/database_session.h"
 #include "colmap/scene/image.h"
@@ -22,6 +24,26 @@
 
 namespace vslam
 {
+  namespace
+  {
+    colmap::FeatureExtractionOptions makeSiftExtractionOptions(const SiftExtractConfig &cfg)
+    {
+      colmap::FeatureExtractionOptions options(colmap::FeatureExtractorType::SIFT);
+      options.use_gpu = cfg.use_gpu;
+      options.gpu_index = cfg.gpu_index;
+      options.max_image_size = cfg.max_image_size;
+      options.sift->max_num_features = cfg.max_num_features;
+      options.sift->first_octave = cfg.first_octave;
+      options.sift->num_octaves = cfg.num_octaves;
+      options.sift->octave_resolution = cfg.octave_resolution;
+      options.sift->peak_threshold = cfg.peak_threshold;
+      options.sift->edge_threshold = cfg.edge_threshold;
+      options.sift->estimate_affine_shape = cfg.estimate_affine_shape;
+      options.sift->max_num_orientations = cfg.max_num_orientations;
+      options.sift->upright = cfg.upright;
+      return options;
+    }
+  } // namespace
 
   MapManager::MapManager(const MapManagerConfig &config) : config_(config) {}
 
@@ -37,10 +59,15 @@ namespace vslam
       map_.reset();
       return false;
     }
-    incremental_mapper_ =
-        std::make_unique<colmap::OnlineIncrementalMapper>(map_->databasePath());
+    incremental_mapper_ = std::make_unique<colmap::OnlineIncrementalMapper>(
+        map_->databasePath(), makeSiftExtractionOptions(config_.sift));
     frame_count_ = 0;
-    PRINT_INFO("[MAP_MANAGER]: Map session created.\n");
+    PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
+               "max_num_features=%d peak=%.6f\n",
+               static_cast<int>(config_.sift.use_gpu),
+               config_.sift.gpu_index.c_str(),
+               config_.sift.max_num_features,
+               config_.sift.peak_threshold);
     return true;
   }
 

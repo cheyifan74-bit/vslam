@@ -182,6 +182,19 @@ namespace vslam
     parser->parse_config("map_save_images", map_cfg.map.save_images, false);
     parser->parse_config("map_image_extension", map_cfg.map.image_extension, false);
 
+    parser->parse_config("sift_use_gpu", map_cfg.sift.use_gpu, false);
+    parser->parse_config("sift_gpu_index", map_cfg.sift.gpu_index, false);
+    parser->parse_config("sift_max_num_features", map_cfg.sift.max_num_features, false);
+    parser->parse_config("sift_first_octave", map_cfg.sift.first_octave, false);
+    parser->parse_config("sift_num_octaves", map_cfg.sift.num_octaves, false);
+    parser->parse_config("sift_octave_resolution", map_cfg.sift.octave_resolution, false);
+    parser->parse_config("sift_peak_threshold", map_cfg.sift.peak_threshold, false);
+    parser->parse_config("sift_edge_threshold", map_cfg.sift.edge_threshold, false);
+    parser->parse_config("sift_estimate_affine_shape", map_cfg.sift.estimate_affine_shape, false);
+    parser->parse_config("sift_max_num_orientations", map_cfg.sift.max_num_orientations, false);
+    parser->parse_config("sift_upright", map_cfg.sift.upright, false);
+    parser->parse_config("sift_max_image_size", map_cfg.sift.max_image_size, false);
+
     if (!parser->successful())
     {
       PRINT_ERROR(RED "[APP]: Failed to parse MapManager parameters from vslam.yaml!\n" RESET);
@@ -238,7 +251,11 @@ namespace vslam
       PRINT_ERROR(RED "[APP]: KeyframeQueue is null, MapManager consumer not started.\n" RESET);
     }
 
-    PRINT_INFO("[APP]: MapManager module created.\n");
+    PRINT_INFO("[APP]: MapManager module created. SIFT max_num_features=%d "
+               "octaves=%d/%d peak=%.6f edge=%.1f max_image_size=%d\n",
+               map_config_.sift.max_num_features, map_config_.sift.num_octaves,
+               map_config_.sift.octave_resolution, map_config_.sift.peak_threshold,
+               map_config_.sift.edge_threshold, map_config_.sift.max_image_size);
   }
 
   void Application::initOpenVINS(const std::string &config_path)

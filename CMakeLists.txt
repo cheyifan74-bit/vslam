@@ -91,7 +91,9 @@ add_subdirectory(open_vins/ov_init)
 add_subdirectory(open_vins/ov_msckf)
 
 # COLMAP submodule (standard add_subdirectory). Extra features off.
-set(CUDA_ENABLED OFF CACHE BOOL "" FORCE)
+# GPU SIFT needs COLMAP_GPU_ENABLED. GUI-off COLMAP also disables OpenGL, so
+# CUDA is the only GPU SIFT path. FindDependencies turns CUDA off if missing.
+set(CUDA_ENABLED ON CACHE BOOL "" FORCE)
 set(GUI_ENABLED OFF CACHE BOOL "" FORCE)
 set(OPENGL_ENABLED OFF CACHE BOOL "" FORCE)
 set(ONNX_ENABLED OFF CACHE BOOL "" FORCE)

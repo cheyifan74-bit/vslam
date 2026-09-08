@@ -40,3 +40,23 @@ map_root_dir: "/tmp/vslam_map"
 map_clear_old_session: true
 map_save_images: true
 map_image_extension: "png"
+
+# ------------------------------------------------------------------
+# SIFT (COLMAP extractor; not OpenVINS tracking features)
+# Defaults match COLMAP SiftExtractionOptions / FeatureExtractionOptions.
+# GPU SIFT uses CUDA SiftGPU. GUI-off builds disable OpenGL SiftGPU.
+# Rebuild with CUDA_ENABLED=ON (and a CUDA toolkit) to use GPU SIFT.
+# OpenCV yaml cannot have ':' inside trailing comments on the same line as a value.
+# ------------------------------------------------------------------
+sift_use_gpu: true             # 1 = CUDA SiftGPU, 0 = VLFeat CPU SIFT
+sift_gpu_index: "-1"           # -1 = auto (CUDA device 0), or 0 / 1 / ...
+sift_max_num_features: 500
+sift_first_octave: -1          # -1 upsamples the image once
+sift_num_octaves: 4
+sift_octave_resolution: 3      # levels per octave
+sift_peak_threshold: 0.0066666666667  # COLMAP default = 0.02 / octave_resolution
+sift_edge_threshold: 10.0
+sift_estimate_affine_shape: false
+sift_max_num_orientations: 2
+sift_upright: false            # 1 = force orientation to 0
+sift_max_image_size: -1        # <=0 uses extractor default (no extra downscale)

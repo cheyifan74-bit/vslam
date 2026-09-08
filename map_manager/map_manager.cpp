@@ -16,7 +16,7 @@
 #include "colmap/geometry/rigid3.h"
 #include "colmap/scene/database_session.h"
 #include "colmap/scene/image.h"
-#include "colmap/sfm/online_incremental_mapper.h"
+#include "colmap/online_sfm/online_incremental_mapper.h"
 #include "colmap/util/types.h"
 
 #include "utility/math_utils.h"

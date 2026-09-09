@@ -198,10 +198,13 @@ namespace vslam
     parser->parse_config("match_use_gpu", map_cfg.match.use_gpu, false);
     parser->parse_config("match_gpu_index", map_cfg.match.gpu_index, false);
     parser->parse_config("match_overlap", map_cfg.match.overlap, false);
+    parser->parse_config("match_num_threads", map_cfg.match.num_threads, false);
     parser->parse_config("match_max_num_matches", map_cfg.match.max_num_matches, false);
     parser->parse_config("sift_match_max_ratio", map_cfg.match.max_ratio, false);
     parser->parse_config("sift_match_max_distance", map_cfg.match.max_distance, false);
     parser->parse_config("sift_match_cross_check", map_cfg.match.cross_check, false);
+    parser->parse_config("match_cpu_brute_force",
+                        map_cfg.match.cpu_brute_force_matcher, false);
     parser->parse_config("match_min_num_inliers", map_cfg.match.min_num_inliers, false);
     parser->parse_config("match_max_error", map_cfg.match.max_error, false);
     parser->parse_config("match_tvg_e_only", map_cfg.match.e_only, false);

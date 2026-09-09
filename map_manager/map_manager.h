@@ -48,10 +48,12 @@ namespace vslam
     bool use_gpu = false;
     std::string gpu_index = "-1";
     int overlap = 10;
+    int num_threads = -1;
     int max_num_matches = 2048;
     double max_ratio = 0.8;
     double max_distance = 0.7;
     bool cross_check = true;
+    bool cpu_brute_force_matcher = false;
     int min_num_inliers = 15;
     double max_error = 4.0;
     bool e_only = true;

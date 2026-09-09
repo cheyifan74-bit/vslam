@@ -55,11 +55,12 @@ namespace vslam
       options.matching.use_gpu = cfg.use_gpu;
       options.matching.gpu_index = cfg.gpu_index;
       options.matching.max_num_matches = cfg.max_num_matches;
-      options.matching.num_threads = 1;
+      options.matching.num_threads = cfg.use_gpu ? 1 : cfg.num_threads;
       options.matching.guided_matching = false;
       options.matching.sift->max_ratio = cfg.max_ratio;
       options.matching.sift->max_distance = cfg.max_distance;
       options.matching.sift->cross_check = cfg.cross_check;
+      options.matching.sift->cpu_brute_force_matcher = cfg.cpu_brute_force_matcher;
       options.e_only = cfg.e_only;
       options.geometry.min_num_inliers = cfg.min_num_inliers;
       options.geometry.detect_watermark = cfg.detect_watermark;
@@ -94,7 +95,7 @@ namespace vslam
     PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
                "max_num_features=%d peak=%.6f | match use_gpu=%d gpu_index=%s "
                "overlap=%d min_inliers=%d e_only=%d degensac=%d watermark=%d "
-               "ransac_trials=[%d,%d]\n",
+               "ransac_trials=[%d,%d] num_threads=%d cpu_brute_force=%d\n",
                static_cast<int>(config_.sift.use_gpu),
                config_.sift.gpu_index.c_str(),
                config_.sift.max_num_features,
@@ -107,7 +108,9 @@ namespace vslam
                static_cast<int>(config_.match.use_degensac),
                static_cast<int>(config_.match.detect_watermark),
                config_.match.ransac_min_num_trials,
-               config_.match.ransac_max_num_trials);
+               config_.match.ransac_max_num_trials,
+               config_.match.num_threads,
+               static_cast<int>(config_.match.cpu_brute_force_matcher));
     return true;
   }
 

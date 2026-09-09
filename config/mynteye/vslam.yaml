@@ -60,3 +60,26 @@ sift_estimate_affine_shape: false
 sift_max_num_orientations: 2
 sift_upright: false            # 1 = force orientation to 0
 sift_max_image_size: -1        # <=0 uses extractor default (no extra downscale)
+
+# ------------------------------------------------------------------
+# Matching (COLMAP SIFT brute-force; linear overlap vs previous keyframes)
+# GPU matcher uses CUDA SiftGPU, same device policy as extraction.
+# Spatial pairing will be added later. Pair verification failure does not
+# fail the whole frame. OpenCV yaml cannot have ':' inside trailing comments.
+# ------------------------------------------------------------------
+match_use_gpu: true
+match_gpu_index: "-1"          # -1 = auto (CUDA device 0), or 0 / 1 / ...
+match_overlap: 10              # match current KF against the previous N KFs
+match_max_num_matches: 2048    # GPU SiftMatch uses n*n device memory. 32768 needs ~4GB
+sift_match_max_ratio: 0.8      # Lowe ratio test
+sift_match_max_distance: 0.7
+sift_match_cross_check: true
+match_min_num_inliers: 15      # TwoViewGeometry RANSAC min inliers
+match_max_error: 4.0           # TwoViewGeometry RANSAC max error in pixels
+# Online TVG. E-only estimates the essential matrix (no F/H/watermark).
+match_tvg_e_only: true
+match_detect_watermark: false
+match_use_degensac: false
+match_ransac_min_num_trials: 30
+match_ransac_max_num_trials: 500
+match_ransac_confidence: 0.99

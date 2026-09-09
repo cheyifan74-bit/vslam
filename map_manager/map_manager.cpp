@@ -11,7 +11,9 @@
 
 #include <opencv2/imgcodecs.hpp>
 
+#include "colmap/estimators/two_view_geometry.h"
 #include "colmap/feature/extractor.h"
+#include "colmap/feature/matcher.h"
 #include "colmap/feature/sift.h"
 #include "colmap/geometry/rigid3.h"
 #include "colmap/scene/database_session.h"
@@ -43,6 +45,31 @@ namespace vslam
       options.sift->upright = cfg.upright;
       return options;
     }
+
+    colmap::OnlineMatchingOptions makeMatchingOptions(const MatchConfig &cfg)
+    {
+      colmap::OnlineMatchingOptions options;
+      options.overlap = cfg.overlap;
+      options.matching = colmap::FeatureMatchingOptions(
+          colmap::FeatureMatcherType::SIFT_BRUTEFORCE);
+      options.matching.use_gpu = cfg.use_gpu;
+      options.matching.gpu_index = cfg.gpu_index;
+      options.matching.max_num_matches = cfg.max_num_matches;
+      options.matching.num_threads = 1;
+      options.matching.guided_matching = false;
+      options.matching.sift->max_ratio = cfg.max_ratio;
+      options.matching.sift->max_distance = cfg.max_distance;
+      options.matching.sift->cross_check = cfg.cross_check;
+      options.e_only = cfg.e_only;
+      options.geometry.min_num_inliers = cfg.min_num_inliers;
+      options.geometry.detect_watermark = cfg.detect_watermark;
+      options.geometry.use_degensac = cfg.use_degensac;
+      options.geometry.ransac_options.max_error = cfg.max_error;
+      options.geometry.ransac_options.min_num_trials = cfg.ransac_min_num_trials;
+      options.geometry.ransac_options.max_num_trials = cfg.ransac_max_num_trials;
+      options.geometry.ransac_options.confidence = cfg.ransac_confidence;
+      return options;
+    }
   } // namespace
 
   MapManager::MapManager(const MapManagerConfig &config) : config_(config) {}
@@ -60,14 +87,27 @@ namespace vslam
       return false;
     }
     incremental_mapper_ = std::make_unique<colmap::OnlineIncrementalMapper>(
-        map_->databasePath(), makeSiftExtractionOptions(config_.sift));
+        map_->databasePath(),
+        makeSiftExtractionOptions(config_.sift),
+        makeMatchingOptions(config_.match));
     frame_count_ = 0;
     PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
-               "max_num_features=%d peak=%.6f\n",
+               "max_num_features=%d peak=%.6f | match use_gpu=%d gpu_index=%s "
+               "overlap=%d min_inliers=%d e_only=%d degensac=%d watermark=%d "
+               "ransac_trials=[%d,%d]\n",
                static_cast<int>(config_.sift.use_gpu),
                config_.sift.gpu_index.c_str(),
                config_.sift.max_num_features,
-               config_.sift.peak_threshold);
+               config_.sift.peak_threshold,
+               static_cast<int>(config_.match.use_gpu),
+               config_.match.gpu_index.c_str(),
+               config_.match.overlap,
+               config_.match.min_num_inliers,
+               static_cast<int>(config_.match.e_only),
+               static_cast<int>(config_.match.use_degensac),
+               static_cast<int>(config_.match.detect_watermark),
+               config_.match.ransac_min_num_trials,
+               config_.match.ransac_max_num_trials);
     return true;
   }
 

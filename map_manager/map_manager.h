@@ -43,11 +43,31 @@ namespace vslam
     int max_image_size = -1;
   };
 
+  struct MatchConfig
+  {
+    bool use_gpu = false;
+    std::string gpu_index = "-1";
+    int overlap = 10;
+    int max_num_matches = 2048;
+    double max_ratio = 0.8;
+    double max_distance = 0.7;
+    bool cross_check = true;
+    int min_num_inliers = 15;
+    double max_error = 4.0;
+    bool e_only = true;
+    bool detect_watermark = false;
+    bool use_degensac = false;
+    int ransac_min_num_trials = 30;
+    int ransac_max_num_trials = 500;
+    double ransac_confidence = 0.99;
+  };
+
   struct MapManagerConfig
   {
     MapConfig map;
     std::vector<CameraParams> cameras;
     SiftExtractConfig sift;
+    MatchConfig match;
   };
 
   /**

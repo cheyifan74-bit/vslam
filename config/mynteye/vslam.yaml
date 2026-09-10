@@ -75,7 +75,7 @@ match_max_num_matches: 2048    # GPU SiftMatch uses n*n device memory. 32768 nee
 sift_match_max_ratio: 0.8      # Lowe ratio test
 sift_match_max_distance: 0.7
 sift_match_cross_check: true
-match_cpu_brute_force: false   # CPU only. true = dense distance matrix, false = Faiss index
+match_cpu_brute_force: false    # CPU only. true = dense distance matrix, false = Faiss index
 match_min_num_inliers: 15      # TwoViewGeometry RANSAC min inliers
 match_max_error: 4.0           # TwoViewGeometry RANSAC max error in pixels
 # Online TVG. E-only estimates the essential matrix (no F/H/watermark).

@@ -165,6 +165,7 @@ add_executable(vslam_node
   keyframe_select/keyframe_select.cpp
   map_manager/map.cpp
   map_manager/map_manager.cpp
+  map_manager/colmap_options.cpp
   utility/math_utils.cpp
 )
 

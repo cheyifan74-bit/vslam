@@ -48,6 +48,9 @@ namespace vslam
     bool use_gpu = false;
     std::string gpu_index = "-1";
     int overlap = 10;
+    double spatial_max_distance = 10.0;
+    double spatial_max_angle_deg = 60.0;
+    int spatial_max_num_images = 10;
     int num_threads = -1;
     int max_num_matches = 2048;
     double max_ratio = 0.8;
@@ -64,12 +67,36 @@ namespace vslam
     double ransac_confidence = 0.99;
   };
 
+  struct MapperConfig
+  {
+    int min_num_inliers = 15;
+    int abs_pose_min_num_inliers = 50;
+    double abs_pose_max_error = 1.0;
+    double abs_pose_min_inlier_ratio = 0.25;
+    int ba_local_num_images = 0;
+    int ba_min_covisibility_points = 15;
+    int ba_min_first_level_for_pose = 3;
+    double ba_max_pose_center_jump = 0.5;
+    double ba_max_pose_angle_deg = 15.0;
+    double filter_max_reproj_error = 1.0;
+    double filter_min_tri_angle = 1.5;
+    int tri_max_transitivity = 1;
+    double tri_create_max_angle_error = 2.0;
+    double tri_continue_max_angle_error = 2.0;
+    double tri_merge_max_reproj_error = 4.0;
+    double tri_complete_max_reproj_error = 4.0;
+    int tri_complete_max_transitivity = 5;
+    double tri_min_angle = 1.5;
+    bool tri_ignore_two_view_tracks = false;
+  };
+
   struct MapManagerConfig
   {
     MapConfig map;
     std::vector<CameraParams> cameras;
     SiftExtractConfig sift;
     MatchConfig match;
+    MapperConfig mapper;
   };
 
   /**

@@ -198,6 +198,12 @@ namespace vslam
     parser->parse_config("match_use_gpu", map_cfg.match.use_gpu, false);
     parser->parse_config("match_gpu_index", map_cfg.match.gpu_index, false);
     parser->parse_config("match_overlap", map_cfg.match.overlap, false);
+    parser->parse_config("match_spatial_max_distance",
+                        map_cfg.match.spatial_max_distance, false);
+    parser->parse_config("match_spatial_max_angle_deg",
+                        map_cfg.match.spatial_max_angle_deg, false);
+    parser->parse_config("match_spatial_max_num_images",
+                        map_cfg.match.spatial_max_num_images, false);
     parser->parse_config("match_num_threads", map_cfg.match.num_threads, false);
     parser->parse_config("match_max_num_matches", map_cfg.match.max_num_matches, false);
     parser->parse_config("sift_match_max_ratio", map_cfg.match.max_ratio, false);
@@ -216,6 +222,45 @@ namespace vslam
                         map_cfg.match.ransac_max_num_trials, false);
     parser->parse_config("match_ransac_confidence",
                         map_cfg.match.ransac_confidence, false);
+
+    parser->parse_config("mapper_min_num_inliers",
+                        map_cfg.mapper.min_num_inliers, false);
+    parser->parse_config("mapper_abs_pose_min_num_inliers",
+                        map_cfg.mapper.abs_pose_min_num_inliers, false);
+    parser->parse_config("mapper_abs_pose_max_error",
+                        map_cfg.mapper.abs_pose_max_error, false);
+    parser->parse_config("mapper_abs_pose_min_inlier_ratio",
+                        map_cfg.mapper.abs_pose_min_inlier_ratio, false);
+    parser->parse_config("mapper_ba_local_num_images",
+                        map_cfg.mapper.ba_local_num_images, false);
+    parser->parse_config("mapper_ba_min_covisibility_points",
+                        map_cfg.mapper.ba_min_covisibility_points, false);
+    parser->parse_config("mapper_ba_min_first_level_for_pose",
+                        map_cfg.mapper.ba_min_first_level_for_pose, false);
+    parser->parse_config("mapper_ba_max_pose_center_jump",
+                        map_cfg.mapper.ba_max_pose_center_jump, false);
+    parser->parse_config("mapper_ba_max_pose_angle_deg",
+                        map_cfg.mapper.ba_max_pose_angle_deg, false);
+    parser->parse_config("mapper_filter_max_reproj_error",
+                        map_cfg.mapper.filter_max_reproj_error, false);
+    parser->parse_config("mapper_filter_min_tri_angle",
+                        map_cfg.mapper.filter_min_tri_angle, false);
+    parser->parse_config("mapper_tri_max_transitivity",
+                        map_cfg.mapper.tri_max_transitivity, false);
+    parser->parse_config("mapper_tri_create_max_angle_error",
+                        map_cfg.mapper.tri_create_max_angle_error, false);
+    parser->parse_config("mapper_tri_continue_max_angle_error",
+                        map_cfg.mapper.tri_continue_max_angle_error, false);
+    parser->parse_config("mapper_tri_merge_max_reproj_error",
+                        map_cfg.mapper.tri_merge_max_reproj_error, false);
+    parser->parse_config("mapper_tri_complete_max_reproj_error",
+                        map_cfg.mapper.tri_complete_max_reproj_error, false);
+    parser->parse_config("mapper_tri_complete_max_transitivity",
+                        map_cfg.mapper.tri_complete_max_transitivity, false);
+    parser->parse_config("mapper_tri_min_angle",
+                        map_cfg.mapper.tri_min_angle, false);
+    parser->parse_config("mapper_tri_ignore_two_view_tracks",
+                        map_cfg.mapper.tri_ignore_two_view_tracks, false);
 
     if (!parser->successful())
     {

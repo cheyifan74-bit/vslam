@@ -8,6 +8,7 @@
 
 #include "colmap/feature/extractor.h"
 #include "colmap/online_sfm/online_feature_matcher.h"
+#include "colmap/online_sfm/online_mapper.h"
 #include "map_manager/map_manager.h"
 
 namespace vslam
@@ -15,6 +16,7 @@ namespace vslam
 
   colmap::FeatureExtractionOptions ToColmap(const SiftExtractConfig &cfg);
   colmap::OnlineMatchingOptions ToColmap(const MatchConfig &cfg);
+  colmap::OnlineMapperOptions ToColmap(const MapperConfig &cfg);
 
 } // namespace vslam
 

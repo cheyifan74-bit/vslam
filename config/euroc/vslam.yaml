@@ -73,7 +73,7 @@ match_gpu_index: "-1"          # -1 = auto (CUDA device 0), or 0 / 1 / ...
 match_overlap: 10              # match current KF against the previous N KFs
 match_spatial_max_distance: 10.0   # meters; VIO camera-center radius. <=0 disables spatial
 match_spatial_max_angle_deg: 70.0  # degrees; optical-axis angle. <=0 disables spatial
-match_spatial_max_num_images: 15   # keep nearest N spatial KFs. <=0 keeps all in range
+match_spatial_max_num_images: 10   # keep nearest N spatial KFs. <=0 keeps all in range
 match_num_threads: -1          # CPU 1-to-N workers. -1 = all cores. GPU matching stays serial
 match_max_num_matches: 2048    # GPU SiftMatch uses n*n device memory. 32768 needs ~4GB
 sift_match_max_ratio: 0.8      # Lowe ratio test
@@ -81,7 +81,7 @@ sift_match_max_distance: 0.7
 sift_match_cross_check: true
 match_cpu_brute_force: false    # CPU only. true = dense distance matrix, false = Faiss index
 match_min_num_inliers: 15      # TwoViewGeometry RANSAC min inliers
-match_max_error: 1.0           # TwoViewGeometry RANSAC max error in pixels
+match_max_error: 2.0           # TwoViewGeometry RANSAC max error in pixels
 # Online TVG. E-only estimates the essential matrix (no F/H/watermark).
 match_tvg_e_only: true
 match_detect_watermark: false
@@ -96,7 +96,7 @@ match_ransac_confidence: 0.99
 # ------------------------------------------------------------------
 mapper_min_num_inliers: 15                 # init partner min matches between the two KFs
 mapper_abs_pose_min_num_inliers: 50        # P3P RANSAC min 2D-3D inliers
-mapper_abs_pose_max_error: 1.0             # P3P RANSAC max error in pixels
+mapper_abs_pose_max_error: 2.0             # P3P RANSAC max error in pixels
 mapper_abs_pose_min_inlier_ratio: 0.25
 mapper_ba_local_num_images: 0              # 0 = no cap on first-level window
 mapper_ba_min_covisibility_points: 15      # first-level = shared 3D >= this

@@ -41,12 +41,18 @@ namespace vslam
     incremental_mapper_ = std::make_unique<colmap::OnlineIncrementalMapper>(
         map_->databasePath(),
         ToColmap(config_.sift),
-        ToColmap(config_.match));
+        ToColmap(config_.match),
+        map_->sparseDir(),
+        ToColmap(config_.mapper));
     frame_count_ = 0;
     PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
                "max_num_features=%d peak=%.6f | match use_gpu=%d gpu_index=%s "
-               "overlap=%d min_inliers=%d e_only=%d degensac=%d watermark=%d "
-               "ransac_trials=[%d,%d] num_threads=%d cpu_brute_force=%d\n",
+               "overlap=%d spatial=(%.1fm,%.1fdeg,n=%d) min_inliers=%d e_only=%d "
+               "degensac=%d watermark=%d "
+               "ransac_trials=[%d,%d] num_threads=%d cpu_brute_force=%d | "
+               "mapper p3p_inliers=%d p3p_err=%.2f covis=%d freeze_first<%d "
+               "lba_jump=(%.2fm,%.1fdeg) filter_err=%.2f tri_angle=%.2f "
+               "ignore_2view=%d\n",
                static_cast<int>(config_.sift.use_gpu),
                config_.sift.gpu_index.c_str(),
                config_.sift.max_num_features,
@@ -54,6 +60,9 @@ namespace vslam
                static_cast<int>(config_.match.use_gpu),
                config_.match.gpu_index.c_str(),
                config_.match.overlap,
+               config_.match.spatial_max_distance,
+               config_.match.spatial_max_angle_deg,
+               config_.match.spatial_max_num_images,
                config_.match.min_num_inliers,
                static_cast<int>(config_.match.e_only),
                static_cast<int>(config_.match.use_degensac),
@@ -61,7 +70,16 @@ namespace vslam
                config_.match.ransac_min_num_trials,
                config_.match.ransac_max_num_trials,
                config_.match.num_threads,
-               static_cast<int>(config_.match.cpu_brute_force_matcher));
+               static_cast<int>(config_.match.cpu_brute_force_matcher),
+               config_.mapper.abs_pose_min_num_inliers,
+               config_.mapper.abs_pose_max_error,
+               config_.mapper.ba_min_covisibility_points,
+               config_.mapper.ba_min_first_level_for_pose,
+               config_.mapper.ba_max_pose_center_jump,
+               config_.mapper.ba_max_pose_angle_deg,
+               config_.mapper.filter_max_reproj_error,
+               config_.mapper.tri_min_angle,
+               static_cast<int>(config_.mapper.tri_ignore_two_view_tracks));
     return true;
   }
 

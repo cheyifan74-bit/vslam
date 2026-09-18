@@ -33,6 +33,9 @@ namespace vslam
   {
     colmap::OnlineMatchingOptions options;
     options.overlap = cfg.overlap;
+    options.spatial_max_distance = cfg.spatial_max_distance;
+    options.spatial_max_angle_deg = cfg.spatial_max_angle_deg;
+    options.spatial_max_num_images = cfg.spatial_max_num_images;
     options.matching = colmap::FeatureMatchingOptions(
         colmap::FeatureMatcherType::SIFT_BRUTEFORCE);
     options.matching.use_gpu = cfg.use_gpu;
@@ -52,6 +55,34 @@ namespace vslam
     options.geometry.ransac_options.min_num_trials = cfg.ransac_min_num_trials;
     options.geometry.ransac_options.max_num_trials = cfg.ransac_max_num_trials;
     options.geometry.ransac_options.confidence = cfg.ransac_confidence;
+    return options;
+  }
+
+  colmap::OnlineMapperOptions ToColmap(const MapperConfig &cfg)
+  {
+    colmap::OnlineMapperOptions options;
+    options.min_num_inliers = cfg.min_num_inliers;
+    options.abs_pose_min_num_inliers = cfg.abs_pose_min_num_inliers;
+    options.abs_pose_max_error = cfg.abs_pose_max_error;
+    options.abs_pose_min_inlier_ratio = cfg.abs_pose_min_inlier_ratio;
+    options.ba_local_num_images = cfg.ba_local_num_images;
+    options.ba_min_covisibility_points = cfg.ba_min_covisibility_points;
+    options.ba_min_first_level_for_pose = cfg.ba_min_first_level_for_pose;
+    options.ba_max_pose_center_jump = cfg.ba_max_pose_center_jump;
+    options.ba_max_pose_angle_deg = cfg.ba_max_pose_angle_deg;
+    options.filter_max_reproj_error = cfg.filter_max_reproj_error;
+    options.filter_min_tri_angle = cfg.filter_min_tri_angle;
+    options.triangulation.max_transitivity = cfg.tri_max_transitivity;
+    options.triangulation.create_max_angle_error = cfg.tri_create_max_angle_error;
+    options.triangulation.continue_max_angle_error =
+        cfg.tri_continue_max_angle_error;
+    options.triangulation.merge_max_reproj_error = cfg.tri_merge_max_reproj_error;
+    options.triangulation.complete_max_reproj_error =
+        cfg.tri_complete_max_reproj_error;
+    options.triangulation.complete_max_transitivity =
+        cfg.tri_complete_max_transitivity;
+    options.triangulation.min_angle = cfg.tri_min_angle;
+    options.triangulation.ignore_two_view_tracks = cfg.tri_ignore_two_view_tracks;
     return options;
   }
 

@@ -1,0 +1,43 @@
+<launch>
+
+    <!-- ================================================================ -->
+    <!-- EuRoC MAV 便捷入口：转发到 vslam.launch                           -->
+    <!-- 启动: roslaunch vslam euroc.launch                               -->
+    <!--       roslaunch vslam euroc.launch dobag:=true \                 -->
+    <!--                 bag:=/path/to/V1_01_easy.bag                     -->
+    <!-- 话题来自 config/euroc/kalibr_*.yaml:                             -->
+    <!--   /cam0/image_raw  /cam1/image_raw  /imu0                        -->
+    <!-- MH 序列建议 bag_start: mh1=40 mh2=35 mh3=17.5 mh4/mh5=15         -->
+    <!-- ================================================================ -->
+
+    <arg name="verbosity"   default="INFO" />
+    <arg name="config"      default="euroc" />
+    <arg name="config_path" default="$(find vslam)/config/$(arg config)/estimator_config.yaml" />
+    <arg name="doviz"       default="true" />
+    <arg name="rviz_config" default="$(find vslam)/launch/display.rviz" />
+    <arg name="dotime"      default="false" />
+    <arg name="path_time"   default="/tmp/vslam_timing.txt" />
+
+    <arg name="dobag"       default="false" />
+    <arg name="dataset"     default="V1_01_easy" />
+    <arg name="bag"         default="$(env HOME)/datasets/euroc/$(arg dataset).bag" />
+    <arg name="bag_start"   default="0" />
+    <arg name="bag_rate"    default="1.0" />
+    <arg name="bag_delay"   default="1" />
+
+    <include file="$(find vslam)/launch/vslam.launch">
+        <arg name="verbosity"   value="$(arg verbosity)" />
+        <arg name="config"      value="$(arg config)" />
+        <arg name="config_path" value="$(arg config_path)" />
+        <arg name="doviz"       value="$(arg doviz)" />
+        <arg name="rviz_config" value="$(arg rviz_config)" />
+        <arg name="dotime"      value="$(arg dotime)" />
+        <arg name="path_time"   value="$(arg path_time)" />
+    </include>
+
+    <group if="$(arg dobag)">
+        <node pkg="rosbag" type="play" name="rosbag" required="true"
+              args="-d $(arg bag_delay) -r $(arg bag_rate) -s $(arg bag_start) $(arg bag)" />
+    </group>
+
+</launch>

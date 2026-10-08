@@ -8,6 +8,7 @@
 
 #include <Eigen/Geometry>
 
+#include "colmap/geometry/rigid3.h"
 #include "keyframe_select/keyframe.h"
 
 namespace vslam
@@ -26,6 +27,9 @@ namespace vslam
    */
   Pose3d transformImuPoseToCameraPose(const Pose3d &imu_pose, const Eigen::Matrix3d &R_ItoC,
                                       const Eigen::Vector3d &p_IinC);
+
+  /// Keyframe pose is left camera in global (world_from_cam). COLMAP uses cam_from_world.
+  colmap::Rigid3d vioCamFromWorld(const Pose3d &pose);
 
 } // namespace vslam
 

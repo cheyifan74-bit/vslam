@@ -51,7 +51,9 @@ namespace vslam
   void RosWrapper::init(std::shared_ptr<ros::NodeHandle> nh, const std::string &config_path)
   {
     PRINT_INFO("[ROS_WRAPPER]: Initializing Application from config: %s\n", config_path.c_str());
-    app_ = std::make_shared<Application>(config_path);
+    std::string verbosity = "INFO";
+    nh->param<std::string>("verbosity", verbosity, verbosity);
+    app_ = std::make_shared<Application>(config_path, verbosity);
     if (!app_->vioInitialized())
     {
       PRINT_ERROR(RED "[ROS_WRAPPER]: Application VIO initialization failed!\n" RESET);

@@ -2,24 +2,21 @@
  * @Description: Application class implementation
  * @Author: che yifan
  * @Date: 2026-07-26 09:39:40
- * @LastEditTime: 2026-08-02
+ * @LastEditTime: 2026-08-16
  * @LastEditors: che yifan
  * @Reference:
  */
 #include "application.h"
-
-#include <iostream>
-
 #include "keyframe_select/keyframe_select.h"
 
 #include "utils/opencv_yaml_parse.h"
 #include "utils/print.h"
-#include "utils/sensor_data.h"
 
 namespace vslam
 {
 
-  Application::Application(const std::string &config_path) : config_path_(config_path)
+  Application::Application(const std::string &config_path, const std::string &verbosity)
+      : config_path_(config_path), verbosity_override_(verbosity)
   {
     initOpenVINS(config_path);
 
@@ -31,6 +28,7 @@ namespace vslam
 
     PRINT_INFO("[APP]: OpenVINS initialized successfully.\n");
     initKeyframeSelect();
+    initMapManager();
   }
 
   bool Application::vioInitialized() const
@@ -56,6 +54,16 @@ namespace vslam
   const KeyframeSelectConfig &Application::getKeyframeSelectConfig() const
   {
     return kf_config_;
+  }
+
+  std::shared_ptr<MapManager> Application::getMapManager() const
+  {
+    return map_manager_;
+  }
+
+  const MapManagerConfig &Application::getMapManagerConfig() const
+  {
+    return map_config_;
   }
 
   std::string Application::resolveVslamConfigPath(const std::string &estimator_config_path)
@@ -100,6 +108,206 @@ namespace vslam
     return true;
   }
 
+  bool Application::loadCameraParams(std::vector<CameraParams> &cameras) const
+  {
+    auto parser = std::make_shared<ov_core::YamlParser>(config_path_);
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to open estimator config for cameras: %s\n" RESET,
+                  config_path_.c_str());
+      return false;
+    }
+
+    int max_cameras = 2;
+    parser->parse_config("max_cameras", max_cameras, false);
+
+    cameras.clear();
+    cameras.reserve(static_cast<std::size_t>(max_cameras));
+
+    for (int i = 0; i < max_cameras; ++i)
+    {
+      const std::string cam_name = "cam" + std::to_string(i);
+      CameraParams cp;
+
+      std::vector<double> intrinsics = {cp.fx, cp.fy, cp.cx, cp.cy};
+      std::vector<int> resolution = {cp.width, cp.height};
+      std::vector<double> distortion = {0, 0, 0, 0};
+
+      parser->parse_external("relative_config_imucam", cam_name, "intrinsics", intrinsics, false);
+      parser->parse_external("relative_config_imucam", cam_name, "resolution", resolution, false);
+      parser->parse_external("relative_config_imucam", cam_name, "distortion_model",
+                             cp.distortion_model, false);
+      parser->parse_external("relative_config_imucam", cam_name, "distortion_coeffs", distortion,
+                             false);
+
+      if (intrinsics.size() >= 4)
+      {
+        cp.fx = intrinsics[0];
+        cp.fy = intrinsics[1];
+        cp.cx = intrinsics[2];
+        cp.cy = intrinsics[3];
+      }
+      if (resolution.size() >= 2)
+      {
+        cp.width = resolution[0];
+        cp.height = resolution[1];
+      }
+      if (distortion.size() >= 4)
+      {
+        cp.k1 = distortion[0];
+        cp.k2 = distortion[1];
+        cp.k3 = distortion[2];
+        cp.k4 = distortion[3];
+      }
+
+      cameras.push_back(cp);
+    }
+
+    return !cameras.empty();
+  }
+
+  bool Application::loadMapManagerConfig(MapManagerConfig &map_cfg) const
+  {
+    const std::string vslam_yaml = resolveVslamConfigPath(config_path_);
+    auto parser = std::make_shared<ov_core::YamlParser>(vslam_yaml);
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to open vslam.yaml for MapManager: %s\n" RESET,
+                  vslam_yaml.c_str());
+      return false;
+    }
+
+    parser->parse_config("map_root_dir", map_cfg.map.map_root_dir, false);
+    parser->parse_config("map_clear_old_session", map_cfg.map.clear_old_session, false);
+    parser->parse_config("map_save_images", map_cfg.map.save_images, false);
+    parser->parse_config("map_image_extension", map_cfg.map.image_extension, false);
+
+    parser->parse_config("sift_use_gpu", map_cfg.sift.use_gpu, false);
+    parser->parse_config("sift_gpu_index", map_cfg.sift.gpu_index, false);
+    parser->parse_config("sift_max_num_features", map_cfg.sift.max_num_features, false);
+    parser->parse_config("sift_first_octave", map_cfg.sift.first_octave, false);
+    parser->parse_config("sift_num_octaves", map_cfg.sift.num_octaves, false);
+    parser->parse_config("sift_octave_resolution", map_cfg.sift.octave_resolution, false);
+    parser->parse_config("sift_peak_threshold", map_cfg.sift.peak_threshold, false);
+    parser->parse_config("sift_edge_threshold", map_cfg.sift.edge_threshold, false);
+    parser->parse_config("sift_estimate_affine_shape", map_cfg.sift.estimate_affine_shape, false);
+    parser->parse_config("sift_max_num_orientations", map_cfg.sift.max_num_orientations, false);
+    parser->parse_config("sift_upright", map_cfg.sift.upright, false);
+    parser->parse_config("sift_max_image_size", map_cfg.sift.max_image_size, false);
+
+    parser->parse_config("match_use_gpu", map_cfg.match.use_gpu, false);
+    parser->parse_config("match_gpu_index", map_cfg.match.gpu_index, false);
+    parser->parse_config("match_overlap", map_cfg.match.overlap, false);
+    parser->parse_config("match_spatial_max_distance",
+                        map_cfg.match.spatial_max_distance, false);
+    parser->parse_config("match_spatial_max_angle_deg",
+                        map_cfg.match.spatial_max_angle_deg, false);
+    parser->parse_config("match_spatial_max_num_images",
+                        map_cfg.match.spatial_max_num_images, false);
+    parser->parse_config("match_num_threads", map_cfg.match.num_threads, false);
+    parser->parse_config("match_max_num_matches", map_cfg.match.max_num_matches, false);
+    parser->parse_config("sift_match_max_ratio", map_cfg.match.max_ratio, false);
+    parser->parse_config("sift_match_max_distance", map_cfg.match.max_distance, false);
+    parser->parse_config("sift_match_cross_check", map_cfg.match.cross_check, false);
+    parser->parse_config("match_cpu_brute_force",
+                        map_cfg.match.cpu_brute_force_matcher, false);
+    parser->parse_config("match_min_num_inliers", map_cfg.match.min_num_inliers, false);
+    parser->parse_config("match_max_error", map_cfg.match.max_error, false);
+    parser->parse_config("match_tvg_e_only", map_cfg.match.e_only, false);
+    parser->parse_config("match_detect_watermark", map_cfg.match.detect_watermark, false);
+    parser->parse_config("match_use_degensac", map_cfg.match.use_degensac, false);
+    parser->parse_config("match_ransac_min_num_trials",
+                        map_cfg.match.ransac_min_num_trials, false);
+    parser->parse_config("match_ransac_max_num_trials",
+                        map_cfg.match.ransac_max_num_trials, false);
+    parser->parse_config("match_ransac_confidence",
+                        map_cfg.match.ransac_confidence, false);
+
+    parser->parse_config("mapper_min_num_inliers",
+                        map_cfg.mapper.min_num_inliers, false);
+    parser->parse_config("mapper_abs_pose_min_num_inliers",
+                        map_cfg.mapper.abs_pose_min_num_inliers, false);
+    parser->parse_config("mapper_abs_pose_max_error",
+                        map_cfg.mapper.abs_pose_max_error, false);
+    parser->parse_config("mapper_abs_pose_min_inlier_ratio",
+                        map_cfg.mapper.abs_pose_min_inlier_ratio, false);
+    parser->parse_config("mapper_ba_local_num_images",
+                        map_cfg.mapper.ba_local_num_images, false);
+    parser->parse_config("mapper_ba_min_covisibility_points",
+                        map_cfg.mapper.ba_min_covisibility_points, false);
+    parser->parse_config("mapper_ba_min_first_level_for_pose",
+                        map_cfg.mapper.ba_min_first_level_for_pose, false);
+    parser->parse_config("mapper_ba_max_pose_center_jump",
+                        map_cfg.mapper.ba_max_pose_center_jump, false);
+    parser->parse_config("mapper_ba_max_pose_angle_deg",
+                        map_cfg.mapper.ba_max_pose_angle_deg, false);
+    parser->parse_config("mapper_filter_max_reproj_error",
+                        map_cfg.mapper.filter_max_reproj_error, false);
+    parser->parse_config("mapper_filter_min_tri_angle",
+                        map_cfg.mapper.filter_min_tri_angle, false);
+    parser->parse_config("mapper_tri_max_transitivity",
+                        map_cfg.mapper.tri_max_transitivity, false);
+    parser->parse_config("mapper_tri_create_max_angle_error",
+                        map_cfg.mapper.tri_create_max_angle_error, false);
+    parser->parse_config("mapper_tri_continue_max_angle_error",
+                        map_cfg.mapper.tri_continue_max_angle_error, false);
+    parser->parse_config("mapper_tri_merge_max_reproj_error",
+                        map_cfg.mapper.tri_merge_max_reproj_error, false);
+    parser->parse_config("mapper_tri_complete_max_reproj_error",
+                        map_cfg.mapper.tri_complete_max_reproj_error, false);
+    parser->parse_config("mapper_tri_complete_max_transitivity",
+                        map_cfg.mapper.tri_complete_max_transitivity, false);
+    parser->parse_config("mapper_tri_min_angle",
+                        map_cfg.mapper.tri_min_angle, false);
+    parser->parse_config("mapper_tri_ignore_two_view_tracks",
+                        map_cfg.mapper.tri_ignore_two_view_tracks, false);
+
+    parser->parse_config("loop_enabled", map_cfg.loop.enabled, false);
+    parser->parse_config("loop_mixvpr_engine_path", map_cfg.loop.mixvpr_engine_path, false);
+    parser->parse_config("loop_mixvpr_use_gpu", map_cfg.loop.mixvpr_use_gpu, false);
+    parser->parse_config("loop_mixvpr_gpu_index", map_cfg.loop.mixvpr_gpu_index, false);
+    parser->parse_config("loop_cooldown_num_images",
+                        map_cfg.loop.cooldown_num_images, false);
+    parser->parse_config("loop_max_distance",
+                        map_cfg.loop.max_distance, false);
+    parser->parse_config("loop_max_view_angle_deg",
+                        map_cfg.loop.max_view_angle_deg, false);
+    parser->parse_config("loop_min_mixvpr_score",
+                        map_cfg.loop.min_mixvpr_score, false);
+    parser->parse_config("loop_topk",
+                        map_cfg.loop.topk, false);
+    parser->parse_config("loop_min_covisibility_points",
+                        map_cfg.loop.min_covisibility_points, false);
+    parser->parse_config("loop_min_num_matches",
+                        map_cfg.loop.min_num_matches, false);
+    parser->parse_config("loop_min_num_verified_matches",
+                        map_cfg.loop.min_num_verified_matches, false);
+    parser->parse_config("loop_min_num_3d_correspondences",
+                        map_cfg.loop.min_num_3d_correspondences, false);
+    parser->parse_config("loop_min_num_3d_inliers",
+                        map_cfg.loop.min_num_3d_inliers, false);
+    parser->parse_config("loop_correct_local",
+                        map_cfg.loop.correct_local, false);
+    parser->parse_config("loop_max_correct_connected",
+                        map_cfg.loop.max_correct_connected, false);
+    parser->parse_config("loop_fix_scale",
+                        map_cfg.loop.fix_scale, false);
+
+    if (!parser->successful())
+    {
+      PRINT_ERROR(RED "[APP]: Failed to parse MapManager parameters from vslam.yaml!\n" RESET);
+      return false;
+    }
+
+    if (!loadCameraParams(map_cfg.cameras))
+    {
+      PRINT_ERROR(RED "[APP]: Failed to load camera params for Map.\n" RESET);
+      return false;
+    }
+
+    return true;
+  }
+
   void Application::initKeyframeSelect()
   {
     if (!loadKeyframeSelectConfig(kf_config_))
@@ -111,6 +319,43 @@ namespace vslam
     PRINT_INFO("[APP]: KeyframeSelect module created.\n");
   }
 
+  void Application::initMapManager()
+  {
+    if (!loadMapManagerConfig(map_config_))
+    {
+      PRINT_ERROR(RED "[APP]: MapManager will use in-code defaults (vslam.yaml load failed).\n" RESET);
+      // Still try to load cameras if yaml partially failed.
+      if (map_config_.cameras.empty())
+      {
+        loadCameraParams(map_config_.cameras);
+      }
+    }
+
+    map_manager_ = std::make_shared<MapManager>(map_config_);
+    if (!map_manager_->createMap())
+    {
+      PRINT_ERROR(RED "[APP]: MapManager createMap() failed!\n" RESET);
+      map_manager_.reset();
+      return;
+    }
+
+    auto kf_queue = getKeyframeQueue();
+    if (kf_queue)
+    {
+      map_manager_->startKeyframeConsumer(kf_queue);
+    }
+    else
+    {
+      PRINT_ERROR(RED "[APP]: KeyframeQueue is null, MapManager consumer not started.\n" RESET);
+    }
+
+    PRINT_INFO("[APP]: MapManager module created. SIFT max_num_features=%d "
+               "octaves=%d/%d peak=%.6f edge=%.1f max_image_size=%d\n",
+               map_config_.sift.max_num_features, map_config_.sift.num_octaves,
+               map_config_.sift.octave_resolution, map_config_.sift.peak_threshold,
+               map_config_.sift.edge_threshold, map_config_.sift.max_image_size);
+  }
+
   void Application::initOpenVINS(const std::string &config_path)
   {
     PRINT_INFO("[APP]: Loading OpenVINS configuration from: %s\n", config_path.c_str());
@@ -118,6 +363,10 @@ namespace vslam
 
     std::string verbosity = "INFO";
     parser->parse_config("verbosity", verbosity, false);
+    if (!verbosity_override_.empty())
+    {
+      verbosity = verbosity_override_;
+    }
     ov_core::Printer::setPrintLevel(verbosity);
 
     ov_msckf::VioManagerOptions params;

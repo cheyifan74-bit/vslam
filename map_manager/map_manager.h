@@ -90,6 +90,27 @@ namespace vslam
     bool tri_ignore_two_view_tracks = false;
   };
 
+  struct LoopCloserConfig
+  {
+    bool enabled = true;
+    std::string mixvpr_engine_path;
+    bool mixvpr_use_gpu = true;
+    std::string mixvpr_gpu_index = "-1";
+    int cooldown_num_images = 10;
+    double max_distance = 10.0;
+    double max_view_angle_deg = 60.0;
+    double min_mixvpr_score = 0.4;
+    int topk = 5;
+    int min_covisibility_points = 15;
+    int min_num_matches = 20;
+    int min_num_verified_matches = 40;
+    int min_num_3d_correspondences = 20;
+    int min_num_3d_inliers = 20;
+    bool correct_local = true;
+    int max_correct_connected = 20;
+    bool fix_scale = false;
+  };
+
   struct MapManagerConfig
   {
     MapConfig map;
@@ -97,6 +118,7 @@ namespace vslam
     SiftExtractConfig sift;
     MatchConfig match;
     MapperConfig mapper;
+    LoopCloserConfig loop;
   };
 
   /**

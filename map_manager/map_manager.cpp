@@ -43,7 +43,8 @@ namespace vslam
         ToColmap(config_.sift),
         ToColmap(config_.match),
         map_->sparseDir(),
-        ToColmap(config_.mapper));
+        ToColmap(config_.mapper),
+        ToColmap(config_.loop));
     frame_count_ = 0;
     PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
                "max_num_features=%d peak=%.6f | match use_gpu=%d gpu_index=%s "
@@ -52,7 +53,8 @@ namespace vslam
                "ransac_trials=[%d,%d] num_threads=%d cpu_brute_force=%d | "
                "mapper p3p_inliers=%d p3p_err=%.2f covis=%d freeze_first<%d "
                "lba_jump=(%.2fm,%.1fdeg) filter_err=%.2f tri_angle=%.2f "
-               "ignore_2view=%d\n",
+               "ignore_2view=%d | loop enabled=%d cooldown=%d max_dist=%.1f "
+               "mixvpr=%s gpu=%d gpu_index=%s\n",
                static_cast<int>(config_.sift.use_gpu),
                config_.sift.gpu_index.c_str(),
                config_.sift.max_num_features,
@@ -79,7 +81,13 @@ namespace vslam
                config_.mapper.ba_max_pose_angle_deg,
                config_.mapper.filter_max_reproj_error,
                config_.mapper.tri_min_angle,
-               static_cast<int>(config_.mapper.tri_ignore_two_view_tracks));
+               static_cast<int>(config_.mapper.tri_ignore_two_view_tracks),
+               static_cast<int>(config_.loop.enabled),
+               config_.loop.cooldown_num_images,
+               config_.loop.max_distance,
+               config_.loop.mixvpr_engine_path.c_str(),
+               static_cast<int>(config_.loop.mixvpr_use_gpu),
+               config_.loop.mixvpr_gpu_index.c_str());
     return true;
   }
 

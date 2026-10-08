@@ -262,6 +262,37 @@ namespace vslam
     parser->parse_config("mapper_tri_ignore_two_view_tracks",
                         map_cfg.mapper.tri_ignore_two_view_tracks, false);
 
+    parser->parse_config("loop_enabled", map_cfg.loop.enabled, false);
+    parser->parse_config("loop_mixvpr_engine_path", map_cfg.loop.mixvpr_engine_path, false);
+    parser->parse_config("loop_mixvpr_use_gpu", map_cfg.loop.mixvpr_use_gpu, false);
+    parser->parse_config("loop_mixvpr_gpu_index", map_cfg.loop.mixvpr_gpu_index, false);
+    parser->parse_config("loop_cooldown_num_images",
+                        map_cfg.loop.cooldown_num_images, false);
+    parser->parse_config("loop_max_distance",
+                        map_cfg.loop.max_distance, false);
+    parser->parse_config("loop_max_view_angle_deg",
+                        map_cfg.loop.max_view_angle_deg, false);
+    parser->parse_config("loop_min_mixvpr_score",
+                        map_cfg.loop.min_mixvpr_score, false);
+    parser->parse_config("loop_topk",
+                        map_cfg.loop.topk, false);
+    parser->parse_config("loop_min_covisibility_points",
+                        map_cfg.loop.min_covisibility_points, false);
+    parser->parse_config("loop_min_num_matches",
+                        map_cfg.loop.min_num_matches, false);
+    parser->parse_config("loop_min_num_verified_matches",
+                        map_cfg.loop.min_num_verified_matches, false);
+    parser->parse_config("loop_min_num_3d_correspondences",
+                        map_cfg.loop.min_num_3d_correspondences, false);
+    parser->parse_config("loop_min_num_3d_inliers",
+                        map_cfg.loop.min_num_3d_inliers, false);
+    parser->parse_config("loop_correct_local",
+                        map_cfg.loop.correct_local, false);
+    parser->parse_config("loop_max_correct_connected",
+                        map_cfg.loop.max_correct_connected, false);
+    parser->parse_config("loop_fix_scale",
+                        map_cfg.loop.fix_scale, false);
+
     if (!parser->successful())
     {
       PRINT_ERROR(RED "[APP]: Failed to parse MapManager parameters from vslam.yaml!\n" RESET);

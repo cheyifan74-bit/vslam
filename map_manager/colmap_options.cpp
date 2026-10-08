@@ -86,4 +86,27 @@ namespace vslam
     return options;
   }
 
+  colmap::OnlineLoopCloserOptions ToColmap(const LoopCloserConfig &cfg)
+  {
+    colmap::OnlineLoopCloserOptions options;
+    options.enabled = cfg.enabled;
+    options.mixvpr_engine_path = cfg.mixvpr_engine_path;
+    options.mixvpr_use_gpu = cfg.mixvpr_use_gpu;
+    options.mixvpr_gpu_index = cfg.mixvpr_gpu_index;
+    options.cooldown_num_images = cfg.cooldown_num_images;
+    options.max_distance = cfg.max_distance;
+    options.max_view_angle_deg = cfg.max_view_angle_deg;
+    options.min_mixvpr_score = cfg.min_mixvpr_score;
+    options.topk = cfg.topk;
+    options.min_covisibility_points = cfg.min_covisibility_points;
+    options.min_num_matches = cfg.min_num_matches;
+    options.min_num_verified_matches = cfg.min_num_verified_matches;
+    options.min_num_3d_correspondences = cfg.min_num_3d_correspondences;
+    options.min_num_3d_inliers = cfg.min_num_3d_inliers;
+    options.correct_local = cfg.correct_local;
+    options.max_correct_connected = cfg.max_correct_connected;
+    options.fix_scale = cfg.fix_scale;
+    return options;
+  }
+
 } // namespace vslam

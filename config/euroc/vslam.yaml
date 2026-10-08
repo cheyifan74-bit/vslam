@@ -96,14 +96,14 @@ match_ransac_confidence: 0.99
 # ------------------------------------------------------------------
 mapper_min_num_inliers: 15                 # init partner min matches between the two KFs
 mapper_abs_pose_min_num_inliers: 50        # P3P RANSAC min 2D-3D inliers
-mapper_abs_pose_max_error: 2.0             # P3P RANSAC max error in pixels
+mapper_abs_pose_max_error: 1.0             # P3P RANSAC max error in pixels
 mapper_abs_pose_min_inlier_ratio: 0.25
 mapper_ba_local_num_images: 0              # 0 = no cap on first-level window
 mapper_ba_min_covisibility_points: 15      # first-level = shared 3D >= this
 mapper_ba_min_first_level_for_pose: 3      # fewer first-level KFs => freeze poses
 mapper_ba_max_pose_center_jump: 0.5        # meters; revert LBA if center jumps more
 mapper_ba_max_pose_angle_deg: 15.0         # degrees; revert LBA if rotation jumps more
-mapper_filter_max_reproj_error: 4.0        # pixels; FilterPoints3DInImages
+mapper_filter_max_reproj_error: 2.0        # pixels; FilterPoints3DInImages
 mapper_filter_min_tri_angle: 1.5           # degrees; FilterPoints3DInImages
 mapper_tri_max_transitivity: 1
 mapper_tri_create_max_angle_error: 2.0     # degrees; new triangulation
@@ -113,3 +113,28 @@ mapper_tri_complete_max_reproj_error: 4.0  # pixels; CompleteTracks / CompleteIm
 mapper_tri_complete_max_transitivity: 5
 mapper_tri_min_angle: 1.5                  # degrees; min pairwise triangulation angle
 mapper_tri_ignore_two_view_tracks: false   # false = keep 2-view tracks
+
+
+# ------------------------------------------------------------------
+# Online loop closer P0 (MixVPR cosine retrieve + geometric verify, no map correction)
+# Candidates: keyframes within loop_max_distance of the current camera
+# center, excluding first-level covisible KFs, then heading / score / top-k.
+# MixVPR requires an explicit TensorRT .engine path (no bundled fallback).
+# ------------------------------------------------------------------
+loop_enabled: true
+loop_mixvpr_engine_path: "/home/aa/vslam_ws/src/vslam/data/models/mixvpr_resnet50_512_fp16.engine"
+loop_mixvpr_use_gpu: true
+loop_mixvpr_gpu_index: "-1"    # -1 = auto (CUDA device 0), or 0 / 1 / ...
+loop_cooldown_num_images: 10
+loop_max_distance: 10.0        # meters; <=0 disables the distance gate
+loop_max_view_angle_deg: 60.0  # optical-axis angle; <=0 disables
+loop_min_mixvpr_score: 0.0     # MixVPR cosine after L2; <=0 disables
+loop_topk: 5                   # MixVPR cosine hits sent to geometric verify; <=0 keeps all
+loop_min_covisibility_points: 15
+loop_min_num_matches: 20                 # ORB: BoW matches >= 20 before Sim3
+loop_min_num_verified_matches: 40        # ORB: nTotalMatches >= 40
+loop_min_num_3d_correspondences: 20      # ORB: enough 3D matches to run Sim3
+loop_min_num_3d_inliers: 20              # ORB: RANSAC/OptimizeSim3 min inliers
+loop_correct_local: true
+loop_max_correct_connected: 20
+loop_fix_scale: false                 # false = estimate Sim3 scale; true = SE3 (s=1)

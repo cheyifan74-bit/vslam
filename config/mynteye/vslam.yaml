@@ -1,7 +1,7 @@
 %YAML:1.0 # need to specify the file type at the top!
 
 # ==================================================================
-# VSLAM application parameters (non-OpenVINS)
+# VSLAM application parameters 
 # ==================================================================
 
 # ------------------------------------------------------------------
@@ -42,11 +42,7 @@ map_save_images: true
 map_image_extension: "png"
 
 # ------------------------------------------------------------------
-# SIFT (COLMAP extractor; not OpenVINS tracking features)
-# Defaults match COLMAP SiftExtractionOptions / FeatureExtractionOptions.
-# GPU SIFT uses CUDA SiftGPU. GUI-off builds disable OpenGL SiftGPU.
-# Rebuild with CUDA_ENABLED=ON (and a CUDA toolkit) to use GPU SIFT.
-# OpenCV yaml cannot have ':' inside trailing comments on the same line as a value.
+# SIFT
 # ------------------------------------------------------------------
 sift_use_gpu: true             # 1 = CUDA SiftGPU, 0 = VLFeat CPU SIFT
 sift_gpu_index: "-1"           # -1 = auto (CUDA device 0), or 0 / 1 / ...
@@ -57,16 +53,12 @@ sift_octave_resolution: 3      # levels per octave
 sift_peak_threshold: 0.0066666666667  # COLMAP default = 0.02 / octave_resolution
 sift_edge_threshold: 10.0
 sift_estimate_affine_shape: false
-sift_max_num_orientations: 2
+sift_max_num_orientations: 1
 sift_upright: false            # 1 = force orientation to 0
 sift_max_image_size: -1        # <=0 uses extractor default (no extra downscale)
 
 # ------------------------------------------------------------------
-# Matching (COLMAP SIFT brute-force; temporal overlap + spatial neighbors)
-# GPU matcher uses CUDA SiftGPU, same device policy as extraction.
-# Spatial uses VIO cam_from_world. Temporal hits are excluded from spatial.
-# Pair verification failure does not fail the whole frame.
-# OpenCV yaml cannot have ':' inside trailing comments.
+# Matching
 # ------------------------------------------------------------------
 match_use_gpu: true
 match_gpu_index: "-1"          # -1 = auto (CUDA device 0), or 0 / 1 / ...
@@ -92,43 +84,61 @@ match_ransac_confidence: 0.99
 
 # ------------------------------------------------------------------
 # Online mapper (P3P registration, triangulation, local BA)
-# Defaults match OnlineMapperOptions. OpenCV yaml cannot have ':' in trailing comments.
 # ------------------------------------------------------------------
 mapper_min_num_inliers: 15                 # init partner min matches between the two KFs
-mapper_abs_pose_min_num_inliers: 50        # P3P RANSAC min 2D-3D inliers
-mapper_abs_pose_max_error: 1.0             # P3P RANSAC max error in pixels
+mapper_abs_pose_min_num_inliers: 25        # P3P RANSAC min 2D-3D inliers
+mapper_abs_pose_max_error: 3.0             # P3P RANSAC max error in pixels
 mapper_abs_pose_min_inlier_ratio: 0.25
-mapper_ba_local_num_images: 10              # 0 = no cap on first-level window
+mapper_ba_local_num_images: 0              # 0 = no cap on first-level window
 mapper_ba_min_covisibility_points: 15      # first-level = shared 3D >= this
-mapper_ba_min_first_level_for_pose: 3      # fewer first-level KFs => freeze poses
-mapper_ba_max_pose_center_jump: 0.5        # meters; revert LBA if center jumps more
-mapper_ba_max_pose_angle_deg: 15.0         # degrees; revert LBA if rotation jumps more
 mapper_filter_max_reproj_error: 2.0        # pixels; FilterPoints3DInImages
 mapper_filter_min_tri_angle: 1.5           # degrees; FilterPoints3DInImages
-mapper_tri_max_transitivity: 1
-mapper_tri_create_max_angle_error: 2.0     # degrees; new triangulation
+mapper_tri_max_transitivity: 3
+mapper_tri_create_max_angle_error: 1.0     # degrees; new triangulation
 mapper_tri_continue_max_angle_error: 2.0   # degrees; continue existing tracks
 mapper_tri_merge_max_reproj_error: 4.0     # pixels; MergeTracks
 mapper_tri_complete_max_reproj_error: 4.0  # pixels; CompleteTracks / CompleteImage
 mapper_tri_complete_max_transitivity: 5
-mapper_tri_min_angle: 1.5                  # degrees; min pairwise triangulation angle
-mapper_tri_ignore_two_view_tracks: false   # false = keep 2-view tracks
+mapper_tri_min_angle: 2.0                  # degrees; min pairwise triangulation angle
+mapper_tri_ignore_two_view_tracks: true   # false = keep 2-view tracks
+# Local-map projection matching (points of the last N registered KFs, descriptor-checked)
+mapper_local_map_num_images: 15            # <=0 disables
+mapper_local_map_search_radius_px: 15.0    # pixels; around the VIO-predicted projection, before registration
+mapper_local_map_refine_radius_px: 4.0     # pixels; around the refined projection, after registration
+mapper_local_map_max_desc_distance: 0.7    # SIFT L2 on unit descriptors
+mapper_local_map_max_ratio: 0.9            # best / second-best; >=1 disables
+# Local BA VIO relative-pose priors between window KFs
+mapper_ba_vio_prior_rot_sigma_deg: 1.0     # <=0 disables
+mapper_ba_vio_prior_trans_sigma_m: 0.02
+mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step length
+mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
+# Local BA window padding when covisibility is weak (e.g. VIO-fallback frames)
+mapper_ba_min_window_images: 4             # pad windows smaller than this; <=0 disables
+mapper_ba_temporal_window_images: 5        # at most this many recent registered KFs added
 
 # ------------------------------------------------------------------
-loop_enabled: false
+loop_enabled: true
 loop_mixvpr_engine_path: "/home/aa/vslam_ws/src/vslam/data/models/mixvpr_resnet50_512_fp16.engine"
 loop_mixvpr_use_gpu: true
 loop_mixvpr_gpu_index: "-1"    # -1 = auto (CUDA device 0), or 0 / 1 / ...
-loop_cooldown_num_images: 10
+loop_cooldown_num_images: 5
+loop_min_frame_gap: 20            # candidates must be >= this many keyframes older than the query
 loop_max_distance: 10.0        # meters; <=0 disables the distance gate
 loop_max_view_angle_deg: 60.0  # optical-axis angle; <=0 disables
 loop_min_mixvpr_score: 0.0     # MixVPR cosine after L2; <=0 disables
 loop_topk: 5                   # MixVPR cosine hits sent to geometric verify; <=0 keeps all
 loop_min_covisibility_points: 15
-loop_min_num_matches: 20                 # ORB: BoW matches >= 20 before Sim3
-loop_min_num_verified_matches: 30        # ORB: nTotalMatches >= 40
-loop_min_num_3d_correspondences: 20      # ORB: enough 3D matches to run Sim3
-loop_min_num_3d_inliers: 20              # ORB: RANSAC/OptimizeSim3 min inliers
+loop_min_num_matches: 20                 # feature matches with the candidate
+loop_min_num_verified_matches: 30        # PnP inliers after guided matching
+loop_min_num_3d_correspondences: 20      # 2D-3D pairs needed to run PnP
+loop_min_num_3d_inliers: 20              # PnP RANSAC inliers
 loop_correct_local: true
 loop_max_correct_connected: 60
-loop_fix_scale: true                 # false = estimate Sim3 scale; true = SE3 (s=1)
+loop_pnp_max_error: 3.0                  # px; loop PnP RANSAC / inlier threshold
+loop_guided_radius_px: 7.5               # px; project loop map into current to grow matches
+loop_max_rot_vs_essential_deg: 3.0       # PnP rotation vs essential-matrix rotation; <=0 disables
+loop_max_correction_m: 3.0               # reject loops that move the current frame more than this
+loop_max_correction_deg: 20.0
+loop_pose_graph_min_covis: 50            # shared points for a covisibility edge in the pose graph
+loop_fuse_radius_px: 6.0                 # px; projection fusion after correction
+loop_fuse_max_point_distance: 0.2        # meters; merge only if the two 3D points are this close

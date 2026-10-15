@@ -75,9 +75,6 @@ namespace vslam
     double abs_pose_min_inlier_ratio = 0.25;
     int ba_local_num_images = 0;
     int ba_min_covisibility_points = 15;
-    int ba_min_first_level_for_pose = 3;
-    double ba_max_pose_center_jump = 0.5;
-    double ba_max_pose_angle_deg = 15.0;
     double filter_max_reproj_error = 1.0;
     double filter_min_tri_angle = 1.5;
     int tri_max_transitivity = 1;
@@ -88,6 +85,17 @@ namespace vslam
     int tri_complete_max_transitivity = 5;
     double tri_min_angle = 1.5;
     bool tri_ignore_two_view_tracks = false;
+    int local_map_num_images = 15;
+    double local_map_search_radius_px = 15.0;
+    double local_map_refine_radius_px = 4.0;
+    double local_map_max_desc_distance = 0.7;
+    double local_map_max_ratio = 0.9;
+    double ba_vio_prior_rot_sigma_deg = 1.0;
+    double ba_vio_prior_trans_sigma_m = 0.02;
+    double ba_vio_prior_trans_sigma_ratio = 0.03;
+    int ba_vio_prior_max_gap = 5;
+    int ba_min_window_images = 4;
+    int ba_temporal_window_images = 5;
   };
 
   struct LoopCloserConfig
@@ -97,6 +105,7 @@ namespace vslam
     bool mixvpr_use_gpu = true;
     std::string mixvpr_gpu_index = "-1";
     int cooldown_num_images = 10;
+    int min_frame_gap = 20;
     double max_distance = 10.0;
     double max_view_angle_deg = 60.0;
     double min_mixvpr_score = 0.4;
@@ -108,7 +117,14 @@ namespace vslam
     int min_num_3d_inliers = 20;
     bool correct_local = true;
     int max_correct_connected = 20;
-    bool fix_scale = false;
+    double pnp_max_error = 3.0;
+    double guided_radius_px = 7.5;
+    double max_rot_vs_essential_deg = 3.0;
+    double max_correction_m = 3.0;
+    double max_correction_deg = 20.0;
+    int pose_graph_min_covis = 50;
+    double fuse_radius_px = 6.0;
+    double fuse_max_point_distance = 0.2;
   };
 
   struct MapManagerConfig

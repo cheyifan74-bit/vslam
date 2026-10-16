@@ -67,9 +67,6 @@ namespace vslam
     options.abs_pose_min_inlier_ratio = cfg.abs_pose_min_inlier_ratio;
     options.ba_local_num_images = cfg.ba_local_num_images;
     options.ba_min_covisibility_points = cfg.ba_min_covisibility_points;
-    options.ba_min_first_level_for_pose = cfg.ba_min_first_level_for_pose;
-    options.ba_max_pose_center_jump = cfg.ba_max_pose_center_jump;
-    options.ba_max_pose_angle_deg = cfg.ba_max_pose_angle_deg;
     options.filter_max_reproj_error = cfg.filter_max_reproj_error;
     options.filter_min_tri_angle = cfg.filter_min_tri_angle;
     options.triangulation.max_transitivity = cfg.tri_max_transitivity;
@@ -83,6 +80,17 @@ namespace vslam
         cfg.tri_complete_max_transitivity;
     options.triangulation.min_angle = cfg.tri_min_angle;
     options.triangulation.ignore_two_view_tracks = cfg.tri_ignore_two_view_tracks;
+    options.local_map_num_images = cfg.local_map_num_images;
+    options.local_map_search_radius_px = cfg.local_map_search_radius_px;
+    options.local_map_refine_radius_px = cfg.local_map_refine_radius_px;
+    options.local_map_max_desc_distance = cfg.local_map_max_desc_distance;
+    options.local_map_max_ratio = cfg.local_map_max_ratio;
+    options.ba_vio_prior_rot_sigma_deg = cfg.ba_vio_prior_rot_sigma_deg;
+    options.ba_vio_prior_trans_sigma_m = cfg.ba_vio_prior_trans_sigma_m;
+    options.ba_vio_prior_trans_sigma_ratio = cfg.ba_vio_prior_trans_sigma_ratio;
+    options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
+    options.ba_min_window_images = cfg.ba_min_window_images;
+    options.ba_temporal_window_images = cfg.ba_temporal_window_images;
     return options;
   }
 
@@ -94,6 +102,7 @@ namespace vslam
     options.mixvpr_use_gpu = cfg.mixvpr_use_gpu;
     options.mixvpr_gpu_index = cfg.mixvpr_gpu_index;
     options.cooldown_num_images = cfg.cooldown_num_images;
+    options.min_frame_gap = cfg.min_frame_gap;
     options.max_distance = cfg.max_distance;
     options.max_view_angle_deg = cfg.max_view_angle_deg;
     options.min_mixvpr_score = cfg.min_mixvpr_score;
@@ -105,7 +114,14 @@ namespace vslam
     options.min_num_3d_inliers = cfg.min_num_3d_inliers;
     options.correct_local = cfg.correct_local;
     options.max_correct_connected = cfg.max_correct_connected;
-    options.fix_scale = cfg.fix_scale;
+    options.pnp_max_error = cfg.pnp_max_error;
+    options.guided_radius_px = cfg.guided_radius_px;
+    options.max_rot_vs_essential_deg = cfg.max_rot_vs_essential_deg;
+    options.max_correction_m = cfg.max_correction_m;
+    options.max_correction_deg = cfg.max_correction_deg;
+    options.pose_graph_min_covis = cfg.pose_graph_min_covis;
+    options.fuse_radius_px = cfg.fuse_radius_px;
+    options.fuse_max_point_distance = cfg.fuse_max_point_distance;
     return options;
   }
 

@@ -51,8 +51,8 @@ namespace vslam
                "overlap=%d spatial=(%.1fm,%.1fdeg,n=%d) min_inliers=%d e_only=%d "
                "degensac=%d watermark=%d "
                "ransac_trials=[%d,%d] num_threads=%d cpu_brute_force=%d | "
-               "mapper p3p_inliers=%d p3p_err=%.2f covis=%d freeze_first<%d "
-               "lba_jump=(%.2fm,%.1fdeg) filter_err=%.2f tri_angle=%.2f "
+               "mapper p3p_inliers=%d p3p_err=%.2f covis=%d "
+               "filter_err=%.2f tri_angle=%.2f "
                "ignore_2view=%d | loop enabled=%d cooldown=%d max_dist=%.1f "
                "mixvpr=%s gpu=%d gpu_index=%s\n",
                static_cast<int>(config_.sift.use_gpu),
@@ -76,9 +76,6 @@ namespace vslam
                config_.mapper.abs_pose_min_num_inliers,
                config_.mapper.abs_pose_max_error,
                config_.mapper.ba_min_covisibility_points,
-               config_.mapper.ba_min_first_level_for_pose,
-               config_.mapper.ba_max_pose_center_jump,
-               config_.mapper.ba_max_pose_angle_deg,
                config_.mapper.filter_max_reproj_error,
                config_.mapper.tri_min_angle,
                static_cast<int>(config_.mapper.tri_ignore_two_view_tracks),

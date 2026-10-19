@@ -126,7 +126,7 @@ loop_cooldown_num_images: 5
 loop_min_frame_gap: 20            # candidates must be >= this many keyframes older than the query
 loop_max_distance: 10.0        # meters; <=0 disables the distance gate
 loop_max_view_angle_deg: 60.0  # optical-axis angle; <=0 disables
-loop_min_mixvpr_score: 0.0     # MixVPR cosine after L2; <=0 disables
+loop_min_mixvpr_score: 0.40     # MixVPR cosine after L2; <=0 disables
 loop_topk: 5                   # MixVPR cosine hits sent to geometric verify; <=0 keeps all
 loop_min_covisibility_points: 15
 loop_min_num_matches: 20                 # feature matches with the candidate

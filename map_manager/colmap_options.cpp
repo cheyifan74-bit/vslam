@@ -91,6 +91,7 @@ namespace vslam
     options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
     options.ba_min_window_images = cfg.ba_min_window_images;
     options.ba_temporal_window_images = cfg.ba_temporal_window_images;
+    options.sparse_write_every_n = cfg.sparse_write_every_n;
     return options;
   }
 

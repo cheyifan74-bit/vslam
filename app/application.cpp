@@ -277,6 +277,8 @@ namespace vslam
                         map_cfg.mapper.ba_min_window_images, false);
     parser->parse_config("mapper_ba_temporal_window_images",
                         map_cfg.mapper.ba_temporal_window_images, false);
+    parser->parse_config("mapper_sparse_write_every_n",
+                        map_cfg.mapper.sparse_write_every_n, false);
 
     parser->parse_config("loop_enabled", map_cfg.loop.enabled, false);
     parser->parse_config("loop_mixvpr_engine_path", map_cfg.loop.mixvpr_engine_path, false);

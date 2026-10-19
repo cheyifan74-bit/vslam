@@ -89,7 +89,7 @@ mapper_min_num_inliers: 15                 # init partner min matches between th
 mapper_abs_pose_min_num_inliers: 25        # P3P RANSAC min 2D-3D inliers
 mapper_abs_pose_max_error: 3.0             # P3P RANSAC max error in pixels
 mapper_abs_pose_min_inlier_ratio: 0.25
-mapper_ba_local_num_images: 0              # 0 = no cap on first-level window
+mapper_ba_local_num_images: 30              # 0 = no cap on first-level window
 mapper_ba_min_covisibility_points: 15      # first-level = shared 3D >= this
 mapper_filter_max_reproj_error: 2.0        # pixels; FilterPoints3DInImages
 mapper_filter_min_tri_angle: 1.5           # degrees; FilterPoints3DInImages
@@ -115,6 +115,7 @@ mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apar
 # Local BA window padding when covisibility is weak (e.g. VIO-fallback frames)
 mapper_ba_min_window_images: 4             # pad windows smaller than this; <=0 disables
 mapper_ba_temporal_window_images: 5        # at most this many recent registered KFs added
+mapper_sparse_write_every_n: 10            # <=1 writes sparse every keyframe; init/loop/exit always flush
 
 # ------------------------------------------------------------------
 loop_enabled: true

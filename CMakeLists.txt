@@ -300,6 +300,26 @@ if(DEFINED onnxruntime_LIBRARY_DIR_HINTS AND onnxruntime_LIBRARY_DIR_HINTS
   endif()
 endif()
 
+# Ceres comes in through static COLMAP. Install rewrites RPATH and drops this
+# directory, so the installed node cannot load libceres.so.4.
+set(_ceres_lib_dir "")
+if(TARGET Ceres::ceres)
+  get_target_property(_ceres_loc Ceres::ceres IMPORTED_LOCATION_RELEASE)
+  if(NOT _ceres_loc)
+    get_target_property(_ceres_loc Ceres::ceres IMPORTED_LOCATION)
+  endif()
+  if(_ceres_loc)
+    get_filename_component(_ceres_lib_dir "${_ceres_loc}" DIRECTORY)
+  endif()
+endif()
+if(NOT _ceres_lib_dir AND Ceres_DIR)
+  get_filename_component(_ceres_lib_dir "${Ceres_DIR}/../.." ABSOLUTE)
+endif()
+if(_ceres_lib_dir AND EXISTS "${_ceres_lib_dir}/libceres.so")
+  set_property(TARGET vslam_node APPEND PROPERTY INSTALL_RPATH "${_ceres_lib_dir}")
+  message(STATUS "vslam: Ceres RPATH -> ${_ceres_lib_dir}")
+endif()
+
 if(VSLAM_ROS_VERSION EQUAL 1)
   install(TARGETS vslam_node
     RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

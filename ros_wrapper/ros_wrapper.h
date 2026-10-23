@@ -93,8 +93,9 @@ namespace vslam
     std::vector<ros::Subscriber> camera_subs_;
 
     typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
-    std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
+    // Subscribers must outlive the Synchronizer (its dtor disconnects from them): keep this order.
     std::vector<std::shared_ptr<message_filters::Subscriber<sensor_msgs::Image>>> sync_subs_cam_;
+    std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
   };
 
 } // namespace vslam

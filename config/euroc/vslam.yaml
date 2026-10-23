@@ -119,7 +119,7 @@ mapper_sparse_write_every_n: 10            # <=1 writes sparse every keyframe; i
 
 # ------------------------------------------------------------------
 loop_enabled: true
-loop_mixvpr_engine_path: "/home/aa/vslam_ws/src/vslam/data/models/mixvpr_resnet50_512_fp16.engine"
+loop_mixvpr_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/mixvpr_resnet50_512_fp16.engine"
 loop_mixvpr_use_gpu: true
 loop_mixvpr_gpu_index: "-1"    # -1 = auto (CUDA device 0), or 0 / 1 / ...
 loop_cooldown_num_images: 5

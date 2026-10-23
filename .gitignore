@@ -1,2 +1,10 @@
 # Local data
 /data/
+
+# colcon / cmake build output
+/build/
+/install/
+/log/
+
+/thirdparty/ceres-solver-2.2.0/install/
+/thirdparty/cmake-3.31/

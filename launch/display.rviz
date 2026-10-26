@@ -290,6 +290,58 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 0.65
+      Autocompute Intensity Bounds: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Name: VSLAM Global Map
+      Position Transformer: XYZ
+      Queue Size: 2
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.025
+      Style: Points
+      Topic: /ov_msckf/map_points_global
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Name: VSLAM Local Map
+      Position Transformer: XYZ
+      Queue Size: 2
+      Selectable: true
+      Size (Pixels): 5
+      Size (m): 0.04
+      Style: Points
+      Topic: /ov_msckf/map_points_local
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /ov_msckf/map_visualization
+      Name: VSLAM Keyframes and Loops
+      Namespaces:
+        current_axes: true
+        current_frustum: true
+        current_keyframe: true
+        keyframe_frustums: true
+        keyframe_path: true
+        keyframes: true
+        loop_edges: true
+      Queue Size: 10
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 44; 44; 44

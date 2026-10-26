@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_definitions(-DROS_AVAILABLE=1)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g3 -Wall")
 
 find_program(CCACHE_PROGRAM ccache)
@@ -70,24 +69,66 @@ set(OpenImageIO_DIR "${_VSLAM_DEP_CFG}" CACHE PATH "" FORCE)
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
+# CMake >= 3.30 removes FindBoost. Keep the module; this package uses Boost_LIBRARIES.
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
 find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time graph program_options)
 find_package(SQLite3 REQUIRED)
 
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  sensor_msgs
-  geometry_msgs
-  cv_bridge
-  message_filters
-  image_transport
-  tf
-  std_msgs
-  nav_msgs
-)
+# ROS1 (catkin) or ROS2 (ament); ROS1 wins if both are sourced (same rule as open_vins).
+# ROS_AVAILABLE must match how ov_core/ov_msckf were built (YamlParser layout depends on it).
+find_package(catkin QUIET COMPONENTS roscpp)
+find_package(ament_cmake QUIET)
+if(catkin_FOUND)
+  set(VSLAM_ROS_VERSION 1)
+elseif(ament_cmake_FOUND)
+  set(VSLAM_ROS_VERSION 2)
+else()
+  message(FATAL_ERROR "Neither catkin (ROS1) nor ament_cmake (ROS2) found; source a ROS setup.bash first.")
+endif()
+add_definitions(-DROS_AVAILABLE=${VSLAM_ROS_VERSION})
+message(STATUS "vslam: building for ROS${VSLAM_ROS_VERSION}")
 
-add_subdirectory(open_vins/ov_core)
-add_subdirectory(open_vins/ov_init)
-add_subdirectory(open_vins/ov_msckf)
+if(VSLAM_ROS_VERSION EQUAL 1)
+  find_package(catkin REQUIRED COMPONENTS
+    roscpp
+    sensor_msgs
+    geometry_msgs
+    cv_bridge
+    message_filters
+    image_transport
+    tf
+    std_msgs
+    nav_msgs
+    visualization_msgs
+  )
+
+  add_subdirectory(open_vins/ov_core)
+  add_subdirectory(open_vins/ov_init)
+  add_subdirectory(open_vins/ov_msckf)
+else()
+  # ROS2: ov_core/ov_init/ov_msckf are separate ament packages built by colcon first.
+  set(VSLAM_AMENT_DEPS
+    rclcpp
+    sensor_msgs
+    geometry_msgs
+    cv_bridge
+    message_filters
+    image_transport
+    tf2_ros
+    tf2_geometry_msgs
+    std_msgs
+    nav_msgs
+    visualization_msgs
+    ov_core
+    ov_init
+    ov_msckf
+  )
+  foreach(_dep ${VSLAM_AMENT_DEPS})
+    find_package(${_dep} REQUIRED)
+  endforeach()
+endif()
 
 # COLMAP options (CUDA GPU SIFT; GUI/OpenGL off).
 set(CUDA_ENABLED ON CACHE BOOL "" FORCE)
@@ -105,6 +146,9 @@ set(FETCH_POSELIB ON CACHE BOOL "" FORCE)
 set(FETCH_FAISS ON CACHE BOOL "" FORCE)
 set(COLMAP_HASH_MAP_BACKEND "STD" CACHE STRING "" FORCE)
 set(CCACHE_ENABLED ON CACHE BOOL "" FORCE)
+
+# COLMAP includes boost/bind.hpp, which warns unless the global placeholders stay.
+add_compile_definitions(BOOST_BIND_GLOBAL_PLACEHOLDERS)
 
 add_subdirectory(colmap EXCLUDE_FROM_ALL)
 
@@ -135,20 +179,25 @@ if(TARGET colmap_sensor)
   target_compile_options(colmap_sensor PRIVATE "-D${_OIIO_MAKE_VERSION}")
 endif()
 
-catkin_package(
-  CATKIN_DEPENDS
-    roscpp
-    sensor_msgs
-    geometry_msgs
-    cv_bridge
-    message_filters
-    image_transport
-    ov_core
-    ov_msckf
-    ov_init
-  INCLUDE_DIRS
-    .
-)
+if(VSLAM_ROS_VERSION EQUAL 1)
+  catkin_package(
+    CATKIN_DEPENDS
+      roscpp
+      sensor_msgs
+      geometry_msgs
+      cv_bridge
+      message_filters
+      image_transport
+      ov_core
+      ov_msckf
+      ov_init
+    INCLUDE_DIRS
+      .
+  )
+  set(VSLAM_ROS_WRAPPER_SRC ros_wrapper/ros_wrapper.cpp)
+else()
+  set(VSLAM_ROS_WRAPPER_SRC ros_wrapper/ros2_wrapper.cpp)
+endif()
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -163,7 +212,7 @@ include_directories(
 
 add_executable(vslam_node
   app/application.cpp
-  ros_wrapper/ros_wrapper.cpp
+  ${VSLAM_ROS_WRAPPER_SRC}
   keyframe_select/keyframe_selector.cpp
   keyframe_select/keyframe_select.cpp
   map_manager/map.cpp
@@ -172,17 +221,23 @@ add_executable(vslam_node
   utility/math_utils.cpp
 )
 
+if(VSLAM_ROS_VERSION EQUAL 1)
+  target_link_libraries(vslam_node ov_msckf_lib ${catkin_LIBRARIES})
+else()
+  ament_target_dependencies(vslam_node ${VSLAM_AMENT_DEPS})
+endif()
 target_link_libraries(vslam_node
-  ov_msckf_lib
   colmap
-  ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
   ${Boost_LIBRARIES}
 )
 # Keep vslam_mixvpr against --as-needed (online_sfm needs MixVPR symbols).
+# vslam_mixvpr is static: it must follow colmap_online_sfm on the link line, otherwise the
+# linker has nothing unresolved yet when it scans the archive and drops it.
 if(TARGET vslam_mixvpr)
   target_link_libraries(vslam_node
     -Wl,--no-as-needed
+    colmap_online_sfm
     vslam_mixvpr
     -Wl,--as-needed)
 endif()
@@ -229,6 +284,17 @@ if(DEFINED onnxruntime_LIBRARY_DIR_HINTS AND onnxruntime_LIBRARY_DIR_HINTS
   set_property(TARGET vslam_node APPEND_STRING PROPERTY
                LINK_FLAGS " -Wl,--disable-new-dtags")
 
+  # ROS2 runs from the install space: ship ORT next to the node and point INSTALL_RPATH at it.
+  if(VSLAM_ROS_VERSION EQUAL 2)
+    file(GLOB _ort_libs "${_ort_lib_dir}/libonnxruntime*.so*")
+    install(FILES ${_ort_libs} DESTINATION lib)
+    set(_ort_install_rpath "${CMAKE_INSTALL_PREFIX}/lib")
+    if(VSLAM_CUDNN9_DIR)
+      list(APPEND _ort_install_rpath "${VSLAM_CUDNN9_DIR}")
+    endif()
+    set_property(TARGET vslam_node APPEND PROPERTY INSTALL_RPATH "${_ort_install_rpath}")
+  endif()
+
   if(TARGET colmap_feature)
     set_target_properties(colmap_feature PROPERTIES BUILD_RPATH "${_ort_rpath}")
     set_property(TARGET colmap_feature APPEND_STRING PROPERTY
@@ -236,13 +302,48 @@ if(DEFINED onnxruntime_LIBRARY_DIR_HINTS AND onnxruntime_LIBRARY_DIR_HINTS
   endif()
 endif()
 
-install(TARGETS vslam_node
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+# Ceres comes in through static COLMAP. Install rewrites RPATH and drops this
+# directory, so the installed node cannot load libceres.so.4.
+set(_ceres_lib_dir "")
+if(TARGET Ceres::ceres)
+  get_target_property(_ceres_loc Ceres::ceres IMPORTED_LOCATION_RELEASE)
+  if(NOT _ceres_loc)
+    get_target_property(_ceres_loc Ceres::ceres IMPORTED_LOCATION)
+  endif()
+  if(_ceres_loc)
+    get_filename_component(_ceres_lib_dir "${_ceres_loc}" DIRECTORY)
+  endif()
+endif()
+if(NOT _ceres_lib_dir AND Ceres_DIR)
+  get_filename_component(_ceres_lib_dir "${Ceres_DIR}/../.." ABSOLUTE)
+endif()
+if(_ceres_lib_dir AND EXISTS "${_ceres_lib_dir}/libceres.so")
+  set_property(TARGET vslam_node APPEND PROPERTY INSTALL_RPATH "${_ceres_lib_dir}")
+  message(STATUS "vslam: Ceres RPATH -> ${_ceres_lib_dir}")
+endif()
 
-install(DIRECTORY config/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
-)
-install(DIRECTORY launch/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-)
+if(VSLAM_ROS_VERSION EQUAL 1)
+  install(TARGETS vslam_node
+    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
+
+  install(DIRECTORY config/
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
+  )
+  install(DIRECTORY launch/
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+  )
+else()
+  install(TARGETS vslam_node
+    RUNTIME DESTINATION lib/${PROJECT_NAME}
+  )
+
+  install(DIRECTORY config/
+    DESTINATION share/${PROJECT_NAME}/config
+  )
+  install(DIRECTORY launch/
+    DESTINATION share/${PROJECT_NAME}/launch
+  )
+
+  ament_package()
+endif()

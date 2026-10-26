@@ -18,6 +18,8 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Imu.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <visualization_msgs/MarkerArray.h>
 
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -26,6 +28,7 @@
 #include <opencv2/core.hpp>
 
 #include "keyframe_select/keyframe.h"
+#include "map_manager/map_manager.h"
 
 namespace ov_core
 {
@@ -75,6 +78,7 @@ namespace vslam
 
     void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id);
     void publishKeyframeDebug(const Keyframe &kf);
+    void publishMapVisualization(const MapVisualizationSnapshot &snapshot);
     static Pose3d poseFromMsg(const PoseMsg &msg);
     /// Convert poseimu (IMU in global) to left-camera pose in global using OpenVINS extrinsics.
     bool convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const;
@@ -88,13 +92,17 @@ namespace vslam
     ros::Subscriber sub_pose_;
     ros::Publisher pub_kf_pose_;
     ros::Publisher pub_kf_image_;
+    ros::Publisher pub_map_global_;
+    ros::Publisher pub_map_local_;
+    ros::Publisher pub_map_markers_;
     bool kf_publish_debug_ = true;
 
     std::vector<ros::Subscriber> camera_subs_;
 
     typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
-    std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
+    // Subscribers must outlive the Synchronizer (its dtor disconnects from them): keep this order.
     std::vector<std::shared_ptr<message_filters::Subscriber<sensor_msgs::Image>>> sync_subs_cam_;
+    std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
   };
 
 } // namespace vslam

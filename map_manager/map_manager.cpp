@@ -8,12 +8,14 @@
 #include <chrono>
 #include <exception>
 #include <optional>
+#include <unordered_set>
 
 #include <opencv2/imgcodecs.hpp>
 
 #include "colmap/geometry/rigid3.h"
 #include "colmap/scene/database_session.h"
 #include "colmap/scene/image.h"
+#include "colmap/scene/point3d.h"
 #include "colmap/online_sfm/online_incremental_mapper.h"
 #include "colmap/util/types.h"
 
@@ -200,10 +202,24 @@ namespace vslam
     }
 
     const std::optional<colmap::Rigid3d> vio_prior = vioCamFromWorld(keyframe.pose);
-    if (!mapper->Process(image_id, abs_path, vio_prior))
+    const bool processed = mapper->Process(image_id, abs_path, vio_prior);
+    if (!processed)
     {
       PRINT_WARNING("[MAP_MANAGER]: Process failed for image_id=%u (image is in DB)\n",
                     static_cast<unsigned>(image_id));
+    }
+    else
+    {
+      std::function<void(const MapVisualizationSnapshot &)> callback;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        callback = visualization_callback_;
+      }
+      if (callback)
+      {
+        const auto snapshot = makeVisualizationSnapshot(*mapper, image_id);
+        callback(snapshot);
+      }
     }
 
     PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s image_id=%u (total=%zu)\n",
@@ -263,6 +279,81 @@ namespace vslam
   }
 
   const MapManagerConfig &MapManager::getConfig() const { return config_; }
+
+
+  MapVisualizationSnapshot MapManager::makeVisualizationSnapshot(
+      const colmap::OnlineIncrementalMapper &mapper,
+      uint32_t current_image_id) const
+  {
+    MapVisualizationSnapshot snapshot;
+    snapshot.current_keyframe_id = current_image_id;
+    const colmap::Reconstruction &reconstruction = mapper.GetReconstruction();
+    std::unordered_set<colmap::point3D_t> local_point_ids;
+    std::unordered_set<colmap::image_t> local_image_ids;
+    local_image_ids.insert(current_image_id);
+
+    if (reconstruction.ExistsImage(current_image_id) &&
+        reconstruction.Image(current_image_id).HasPose())
+    {
+      const auto &current = reconstruction.Image(current_image_id);
+      for (const auto &point2D : current.Points2D())
+      {
+        if (!point2D.HasPoint3D() || !reconstruction.ExistsPoint3D(point2D.point3D_id))
+          continue;
+        const auto &point = reconstruction.Point3D(point2D.point3D_id);
+        local_point_ids.insert(point2D.point3D_id);
+        for (const auto &track_element : point.track.Elements())
+          local_image_ids.insert(track_element.image_id);
+      }
+    }
+
+    for (const auto image_id : local_image_ids)
+    {
+      if (!reconstruction.ExistsImage(image_id))
+        continue;
+      const auto &image = reconstruction.Image(image_id);
+      for (const auto &point2D : image.Points2D())
+        if (point2D.HasPoint3D() && reconstruction.ExistsPoint3D(point2D.point3D_id))
+          local_point_ids.insert(point2D.point3D_id);
+    }
+
+    for (const auto image_id : reconstruction.RegImageIds())
+    {
+      const auto &image = reconstruction.Image(image_id);
+      if (!image.HasPose())
+        continue;
+      const colmap::Rigid3d world_from_cam = colmap::Inverse(image.CamFromWorld());
+      MapVizKeyframe keyframe;
+      keyframe.id = image_id;
+      keyframe.position = world_from_cam.translation();
+      keyframe.orientation = world_from_cam.rotation();
+      snapshot.keyframes.push_back(keyframe);
+    }
+
+    for (const auto point_id : reconstruction.Point3DIds())
+    {
+      const auto &point = reconstruction.Point3D(point_id);
+      MapVizPoint viz_point;
+      viz_point.position = point.xyz;
+      viz_point.id = point_id;
+      viz_point.observations = static_cast<std::uint32_t>(point.track.Length());
+      if (local_point_ids.count(point_id))
+        snapshot.local_points.push_back(viz_point);
+      else
+        snapshot.global_points.push_back(viz_point);
+    }
+
+    for (const auto &loop : mapper.ConfirmedLoops())
+      snapshot.confirmed_loops.push_back({loop.image_id1, loop.image_id2});
+    return snapshot;
+  }
+
+  void MapManager::setVisualizationCallback(
+      std::function<void(const MapVisualizationSnapshot &)> callback)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    visualization_callback_ = std::move(callback);
+  }
 
   std::size_t MapManager::frameCount() const
   {

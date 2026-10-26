@@ -101,6 +101,7 @@ if(VSLAM_ROS_VERSION EQUAL 1)
     tf
     std_msgs
     nav_msgs
+    visualization_msgs
   )
 
   add_subdirectory(open_vins/ov_core)
@@ -119,6 +120,7 @@ else()
     tf2_geometry_msgs
     std_msgs
     nav_msgs
+    visualization_msgs
     ov_core
     ov_init
     ov_msckf

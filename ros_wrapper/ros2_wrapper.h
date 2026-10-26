@@ -19,6 +19,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -27,6 +29,7 @@
 #include <opencv2/core.hpp>
 
 #include "keyframe_select/keyframe.h"
+#include "map_manager/map_manager.h"
 
 namespace ov_core
 {
@@ -77,6 +80,7 @@ namespace vslam
 
     void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id);
     void publishKeyframeDebug(const Keyframe &kf);
+    void publishMapVisualization(const MapVisualizationSnapshot &snapshot);
     static Pose3d poseFromMsg(const PoseMsg &msg);
     /// Convert poseimu (IMU in global) to left-camera pose in global using OpenVINS extrinsics.
     bool convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const;
@@ -96,6 +100,9 @@ namespace vslam
     rclcpp::Subscription<PoseMsg>::SharedPtr sub_pose_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_kf_pose_;
     rclcpp::Publisher<ImageMsg>::SharedPtr pub_kf_image_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_global_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_local_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_map_markers_;
     bool kf_publish_debug_ = true;
 
     std::vector<rclcpp::Subscription<ImageMsg>::SharedPtr> camera_subs_;

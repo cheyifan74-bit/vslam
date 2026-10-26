@@ -14,6 +14,10 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <functional>
+
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include "keyframe_select/keyframe.h"
 #include "keyframe_select/keyframe_queue.h"
@@ -26,6 +30,31 @@ namespace colmap
 
 namespace vslam
 {
+
+  struct MapVizPoint {
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+    std::uint64_t id = 0;
+    std::uint32_t observations = 0;
+  };
+
+  struct MapVizKeyframe {
+    std::uint32_t id = 0;
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+    Eigen::Quaterniond orientation = Eigen::Quaterniond::Identity();
+  };
+
+  struct MapVizLoop {
+    std::uint32_t current_id = 0;
+    std::uint32_t candidate_id = 0;
+  };
+
+  struct MapVisualizationSnapshot {
+    std::uint32_t current_keyframe_id = 0;
+    std::vector<MapVizPoint> global_points;
+    std::vector<MapVizPoint> local_points;
+    std::vector<MapVizKeyframe> keyframes;
+    std::vector<MapVizLoop> confirmed_loops;
+  };
 
   struct SiftExtractConfig
   {
@@ -165,9 +194,14 @@ namespace vslam
     std::shared_ptr<Map> getMap() const;
     const MapManagerConfig &getConfig() const;
     std::size_t frameCount() const;
+    void setVisualizationCallback(
+        std::function<void(const MapVisualizationSnapshot &)> callback);
 
   private:
     void keyframeConsumerLoop();
+    MapVisualizationSnapshot makeVisualizationSnapshot(
+        const colmap::OnlineIncrementalMapper &mapper,
+        uint32_t current_image_id) const;
     bool saveKeyframeImage(const Keyframe &keyframe, const std::string &abs_image_path) const;
     /// Open DB (path lock) → WriteImage → Close. Returns COLMAP image_id, or 0 on failure.
     uint32_t writeKeyframeImage(const Map &map,
@@ -183,6 +217,7 @@ namespace vslam
     std::atomic<bool> stop_consumer_{false};
     std::thread consumer_thread_;
     mutable std::mutex mutex_;
+    std::function<void(const MapVisualizationSnapshot &)> visualization_callback_;
   };
 
 } // namespace vslam

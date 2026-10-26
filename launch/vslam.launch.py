@@ -19,7 +19,7 @@ launch_args = [
     # 日志级别: ALL, DEBUG, INFO, WARNING, ERROR, SILENT
     DeclareLaunchArgument("verbosity", default_value="INFO"),
     # 配置名（config/<config>/estimator_config.yaml，同目录下还有 kalibr_*.yaml 与 vslam.yaml）
-    DeclareLaunchArgument("config", default_value="euroc", description="euroc, mynteye, tum_vi"),
+    DeclareLaunchArgument("config", default_value="tum_vi", description="euroc, mynteye, tum_vi"),
     DeclareLaunchArgument("config_path", default_value="",
                           description="estimator_config.yaml 路径；为空则由 config 推导"),
     DeclareLaunchArgument("namespace", default_value="ov_msckf"),

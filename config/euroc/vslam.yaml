@@ -38,6 +38,9 @@ kf_publish_debug: true
 # ------------------------------------------------------------------
 map_root_dir: "/tmp/vslam_map"
 map_clear_old_session: true
+# Load the previous session (sparse + database) and relocalize into it
+# instead of starting over. Takes precedence over clear_old_session.
+map_resume_existing: false
 map_save_images: true
 map_image_extension: "png"
 
@@ -143,3 +146,13 @@ loop_max_correction_deg: 20.0
 loop_pose_graph_min_covis: 50            # shared points for a covisibility edge in the pose graph
 loop_fuse_radius_px: 6.0                 # px; projection fusion after correction
 loop_fuse_max_point_distance: 0.2        # meters; merge only if the two 3D points are this close
+# ------------------------------------------------------------------
+# Relocalization into a resumed map (map_resume_existing: true)
+# Stricter than loop closure: a wrong fix biases every later frame.
+# ------------------------------------------------------------------
+loop_reloc_topk: 5                    # MixVPR global hits sent to PnP; <=0 keeps all
+loop_reloc_min_mixvpr_score: 0.50     # global cosine gate before PnP
+loop_reloc_min_num_matches: 30        # feature matches with the candidate
+loop_reloc_min_num_3d_correspondences: 40  # 2D-3D pairs needed to run PnP
+loop_reloc_min_inliers: 80            # PnP inliers to accept the relocalization
+loop_reloc_max_rot_vs_essential_deg: 3.0   # PnP vs essential rotation; <=0 disables

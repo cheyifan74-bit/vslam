@@ -5,9 +5,11 @@
  */
 #include "map_manager/map_manager.h"
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <optional>
+#include <string>
 #include <unordered_set>
 
 #include <opencv2/imgcodecs.hpp>
@@ -28,7 +30,51 @@ namespace vslam
 
   MapManager::MapManager(const MapManagerConfig &config) : config_(config) {}
 
-  MapManager::~MapManager() { stopKeyframeConsumer(); }
+  MapManager::~MapManager()
+  {
+    stopKeyframeConsumer();
+    // Flush the frame(s) that sparse_write_every_n deferred, otherwise the
+    // next session resumes from a map missing the tail of this one.
+    if (incremental_mapper_)
+    {
+      incremental_mapper_->FlushSparse();
+    }
+  }
+
+  std::size_t MapManager::nextFrameIndexFromDatabase(const Map &map) const
+  {
+    std::size_t next_index = 0;
+    try
+    {
+      colmap::DatabaseSession db(map.databasePath());
+      for (const auto &image : db->ReadAllImages())
+      {
+        const std::string &name = image.Name();
+        const auto slash = name.find_last_of('/');
+        const std::string base = slash == std::string::npos ? name : name.substr(slash + 1);
+        const auto underscore = base.find('_');
+        if (underscore == std::string::npos || underscore == 0)
+        {
+          continue;
+        }
+        try
+        {
+          const auto index = static_cast<std::size_t>(std::stoul(base.substr(0, underscore)));
+          next_index = std::max(next_index, index + 1);
+        }
+        catch (const std::exception &)
+        {
+          continue;
+        }
+      }
+    }
+    catch (const std::exception &e)
+    {
+      PRINT_WARNING("[MAP_MANAGER]: could not read image names from database: %s\n",
+                    e.what());
+    }
+    return next_index;
+  }
 
   bool MapManager::createMap()
   {
@@ -47,7 +93,44 @@ namespace vslam
         map_->sparseDir(),
         ToColmap(config_.mapper),
         ToColmap(config_.loop));
-    frame_count_ = 0;
+    if (map_->isResuming())
+    {
+      if (!incremental_mapper_->ResumeFromDisk())
+      {
+        PRINT_ERROR("[MAP_MANAGER]: ResumeFromDisk failed, keeping the map on "
+                    "disk untouched. Set map_resume_existing=false to start a "
+                    "new session.\n");
+        incremental_mapper_.reset();
+        map_.reset();
+        return false;
+      }
+      {
+        // Highlight the last restored keyframe as "current" so the loaded map is
+        // anchored in the view before this session registers anything.
+        std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
+        const std::vector<colmap::image_t> reg_ids =
+            incremental_mapper_->GetReconstruction().RegImageIds();
+        if (!reg_ids.empty())
+        {
+          last_processed_image_id_ = reg_ids.back();
+        }
+      }
+    }
+    // Image names are index_timestamp.ext. Continue the numbering of whatever
+    // rows are already in the database, otherwise a saved image name (and with
+    // it its image_id) would be reused and overwritten.
+    frame_count_ = nextFrameIndexFromDatabase(*map_);
+    if (map_->isResuming())
+    {
+      PRINT_INFO("[MAP_MANAGER]: Resumed map, next frame index=%zu\n",
+                 frame_count_);
+    }
+    else if (frame_count_ > 0)
+    {
+      PRINT_WARNING("[MAP_MANAGER]: Database already holds images, continuing "
+                    "frame numbering at %zu\n",
+                    frame_count_);
+    }
     PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
                "max_num_features=%d peak=%.6f | match use_gpu=%d gpu_index=%s "
                "overlap=%d spatial=(%.1fm,%.1fdeg,n=%d) min_inliers=%d e_only=%d "
@@ -202,25 +285,22 @@ namespace vslam
     }
 
     const std::optional<colmap::Rigid3d> vio_prior = vioCamFromWorld(keyframe.pose);
-    const bool processed = mapper->Process(image_id, abs_path, vio_prior);
+    bool processed = false;
+    {
+      std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
+      processed = mapper->Process(image_id, abs_path, vio_prior);
+      last_processed_image_id_ = image_id;
+    }
     if (!processed)
     {
       PRINT_WARNING("[MAP_MANAGER]: Process failed for image_id=%u (image is in DB)\n",
                     static_cast<unsigned>(image_id));
     }
-    else
-    {
-      std::function<void(const MapVisualizationSnapshot &)> callback;
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        callback = visualization_callback_;
-      }
-      if (callback)
-      {
-        const auto snapshot = makeVisualizationSnapshot(*mapper, image_id);
-        callback(snapshot);
-      }
-    }
+    // Publish for every keyframe, not only the successfully mapped ones: while a
+    // resumed session is still trying to relocalize, Process() returns true but
+    // adds nothing, and the restored map must stay visible (and keep being
+    // refreshed) until relocalization succeeds and incremental mapping resumes.
+    publishVisualization();
 
     PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s image_id=%u (total=%zu)\n",
                static_cast<unsigned long long>(keyframe.id),
@@ -351,8 +431,49 @@ namespace vslam
   void MapManager::setVisualizationCallback(
       std::function<void(const MapVisualizationSnapshot &)> callback)
   {
-    std::lock_guard<std::mutex> lock(mutex_);
-    visualization_callback_ = std::move(callback);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      visualization_callback_ = std::move(callback);
+    }
+    // A resumed session already holds the whole previous map in the
+    // reconstruction. Push it right away: otherwise RViz stays empty until the
+    // first keyframe of this session is processed, which only happens after VIO
+    // initializes and (on resume) after relocalization succeeds.
+    publishVisualization();
+  }
+
+  void MapManager::publishVisualization()
+  {
+    std::function<void(const MapVisualizationSnapshot &)> callback;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      callback = visualization_callback_;
+    }
+    if (!callback)
+    {
+      return;
+    }
+
+    MapVisualizationSnapshot snapshot;
+    {
+      std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
+      if (!incremental_mapper_)
+      {
+        return;
+      }
+      snapshot = makeVisualizationSnapshot(*incremental_mapper_,
+                                           last_processed_image_id_);
+    }
+
+    // Do not publish an empty snapshot: its first marker is a DELETEALL, so it
+    // would wipe whatever RViz is currently showing (e.g. a restored map while
+    // the first frame of this session is still being relocalized).
+    if (snapshot.keyframes.empty() && snapshot.global_points.empty() &&
+        snapshot.local_points.empty())
+    {
+      return;
+    }
+    callback(snapshot);
   }
 
   std::size_t MapManager::frameCount() const

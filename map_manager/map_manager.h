@@ -155,6 +155,14 @@ namespace vslam
     int pose_graph_min_covis = 50;
     double fuse_radius_px = 6.0;
     double fuse_max_point_distance = 0.2;
+
+    // Relocalization on a resumed map.
+    int reloc_topk = 5;
+    double reloc_min_mixvpr_score = 0.5;
+    int reloc_min_num_matches = 30;
+    int reloc_min_num_3d_correspondences = 40;
+    int reloc_min_inliers = 80;
+    double reloc_max_rot_vs_essential_deg = 3.0;
   };
 
   struct MapManagerConfig
@@ -194,11 +202,22 @@ namespace vslam
     std::shared_ptr<Map> getMap() const;
     const MapManagerConfig &getConfig() const;
     std::size_t frameCount() const;
+    /// Installs the visualization sink and immediately publishes the map that is
+    /// currently loaded, so a resumed session shows the existing keyframes and
+    /// points in RViz before the first keyframe of this session is processed.
     void setVisualizationCallback(
         std::function<void(const MapVisualizationSnapshot &)> callback);
 
+    /// Publish the current reconstruction (restored map + every processed
+    /// keyframe) to the visualization callback. No-op when no callback is set or
+    /// the map is still empty.
+    void publishVisualization();
+
   private:
     void keyframeConsumerLoop();
+    /// Next free image index parsed from the database image names, so a resumed
+    /// session never reuses an existing name (and therefore an image_id).
+    std::size_t nextFrameIndexFromDatabase(const Map &map) const;
     MapVisualizationSnapshot makeVisualizationSnapshot(
         const colmap::OnlineIncrementalMapper &mapper,
         uint32_t current_image_id) const;
@@ -217,6 +236,12 @@ namespace vslam
     std::atomic<bool> stop_consumer_{false};
     std::thread consumer_thread_;
     mutable std::mutex mutex_;
+    /// Guards the mapper/reconstruction: Process() runs on the consumer thread
+    /// while publishVisualization() can be triggered from the ROS thread.
+    std::mutex mapper_mutex_;
+    /// Last image handed to the mapper, used as the "current" keyframe marker.
+    /// Only touched while holding mapper_mutex_.
+    uint32_t last_processed_image_id_ = 0;
     std::function<void(const MapVisualizationSnapshot &)> visualization_callback_;
   };
 

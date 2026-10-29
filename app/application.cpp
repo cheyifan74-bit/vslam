@@ -179,6 +179,7 @@ namespace vslam
 
     parser->parse_config("map_root_dir", map_cfg.map.map_root_dir, false);
     parser->parse_config("map_clear_old_session", map_cfg.map.clear_old_session, false);
+    parser->parse_config("map_resume_existing", map_cfg.map.resume_existing, false);
     parser->parse_config("map_save_images", map_cfg.map.save_images, false);
     parser->parse_config("map_image_extension", map_cfg.map.image_extension, false);
 
@@ -326,6 +327,17 @@ namespace vslam
                         map_cfg.loop.fuse_radius_px, false);
     parser->parse_config("loop_fuse_max_point_distance",
                         map_cfg.loop.fuse_max_point_distance, false);
+    parser->parse_config("loop_reloc_topk", map_cfg.loop.reloc_topk, false);
+    parser->parse_config("loop_reloc_min_mixvpr_score",
+                        map_cfg.loop.reloc_min_mixvpr_score, false);
+    parser->parse_config("loop_reloc_min_num_matches",
+                        map_cfg.loop.reloc_min_num_matches, false);
+    parser->parse_config("loop_reloc_min_num_3d_correspondences",
+                        map_cfg.loop.reloc_min_num_3d_correspondences, false);
+    parser->parse_config("loop_reloc_min_inliers",
+                        map_cfg.loop.reloc_min_inliers, false);
+    parser->parse_config("loop_reloc_max_rot_vs_essential_deg",
+                        map_cfg.loop.reloc_max_rot_vs_essential_deg, false);
 
     if (!parser->successful())
     {

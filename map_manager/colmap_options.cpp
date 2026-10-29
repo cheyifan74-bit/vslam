@@ -123,6 +123,12 @@ namespace vslam
     options.pose_graph_min_covis = cfg.pose_graph_min_covis;
     options.fuse_radius_px = cfg.fuse_radius_px;
     options.fuse_max_point_distance = cfg.fuse_max_point_distance;
+    options.reloc_topk = cfg.reloc_topk;
+    options.reloc_min_mixvpr_score = cfg.reloc_min_mixvpr_score;
+    options.reloc_min_num_matches = cfg.reloc_min_num_matches;
+    options.reloc_min_num_3d_correspondences = cfg.reloc_min_num_3d_correspondences;
+    options.reloc_min_inliers = cfg.reloc_min_inliers;
+    options.reloc_max_rot_vs_essential_deg = cfg.reloc_max_rot_vs_essential_deg;
     return options;
   }
 

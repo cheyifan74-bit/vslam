@@ -154,6 +154,12 @@ namespace vslam
     double max_correction_m = 3.0;
     double max_correction_deg = 20.0;
     int pose_graph_min_covis = 50;
+    bool pose_graph_4dof = true;
+    double pose_graph_odom_rot_sigma_deg = 1.0;
+    double pose_graph_odom_trans_sigma_m = 0.02;
+    double pose_graph_odom_trans_sigma_ratio = 0.03;
+    double pose_graph_loop_min_rot_sigma_deg = 0.2;
+    double pose_graph_loop_min_trans_sigma_m = 0.02;
     double fuse_radius_px = 6.0;
     double fuse_max_point_distance = 0.2;
 

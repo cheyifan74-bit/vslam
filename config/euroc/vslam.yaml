@@ -145,6 +145,12 @@ loop_max_rot_vs_essential_deg: 3.0       # PnP rotation vs essential-matrix rota
 loop_max_correction_m: 3.0               # reject loops that move the current frame more than this
 loop_max_correction_deg: 20.0
 loop_pose_graph_min_covis: 50            # shared points for a covisibility edge in the pose graph
+loop_pose_graph_4dof: true                # x,y,z+yaw per node; world must be the gravity-aligned VIO frame
+loop_pose_graph_odom_rot_sigma_deg: 1.0   # odometry / covisibility edge 1-sigma
+loop_pose_graph_odom_trans_sigma_m: 0.02
+loop_pose_graph_odom_trans_sigma_ratio: 0.03  # grows with step length
+loop_pose_graph_loop_min_rot_sigma_deg: 0.2   # floor on the PnP-covariance loop edge sigma
+loop_pose_graph_loop_min_trans_sigma_m: 0.02
 loop_fuse_radius_px: 6.0                 # px; projection fusion after correction
 loop_fuse_max_point_distance: 0.2        # meters; merge only if the two 3D points are this close
 # ------------------------------------------------------------------

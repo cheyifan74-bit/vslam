@@ -325,6 +325,18 @@ namespace vslam
                         map_cfg.loop.max_correction_deg, false);
     parser->parse_config("loop_pose_graph_min_covis",
                         map_cfg.loop.pose_graph_min_covis, false);
+    parser->parse_config("loop_pose_graph_4dof",
+                        map_cfg.loop.pose_graph_4dof, false);
+    parser->parse_config("loop_pose_graph_odom_rot_sigma_deg",
+                        map_cfg.loop.pose_graph_odom_rot_sigma_deg, false);
+    parser->parse_config("loop_pose_graph_odom_trans_sigma_m",
+                        map_cfg.loop.pose_graph_odom_trans_sigma_m, false);
+    parser->parse_config("loop_pose_graph_odom_trans_sigma_ratio",
+                        map_cfg.loop.pose_graph_odom_trans_sigma_ratio, false);
+    parser->parse_config("loop_pose_graph_loop_min_rot_sigma_deg",
+                        map_cfg.loop.pose_graph_loop_min_rot_sigma_deg, false);
+    parser->parse_config("loop_pose_graph_loop_min_trans_sigma_m",
+                        map_cfg.loop.pose_graph_loop_min_trans_sigma_m, false);
     parser->parse_config("loop_fuse_radius_px",
                         map_cfg.loop.fuse_radius_px, false);
     parser->parse_config("loop_fuse_max_point_distance",

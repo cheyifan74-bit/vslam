@@ -122,6 +122,12 @@ namespace vslam
     options.max_correction_m = cfg.max_correction_m;
     options.max_correction_deg = cfg.max_correction_deg;
     options.pose_graph_min_covis = cfg.pose_graph_min_covis;
+    options.pose_graph_4dof = cfg.pose_graph_4dof;
+    options.pose_graph_odom_rot_sigma_deg = cfg.pose_graph_odom_rot_sigma_deg;
+    options.pose_graph_odom_trans_sigma_m = cfg.pose_graph_odom_trans_sigma_m;
+    options.pose_graph_odom_trans_sigma_ratio = cfg.pose_graph_odom_trans_sigma_ratio;
+    options.pose_graph_loop_min_rot_sigma_deg = cfg.pose_graph_loop_min_rot_sigma_deg;
+    options.pose_graph_loop_min_trans_sigma_m = cfg.pose_graph_loop_min_trans_sigma_m;
     options.fuse_radius_px = cfg.fuse_radius_px;
     options.fuse_max_point_distance = cfg.fuse_max_point_distance;
     options.reloc_topk = cfg.reloc_topk;

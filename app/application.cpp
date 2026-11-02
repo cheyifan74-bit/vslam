@@ -317,6 +317,10 @@ namespace vslam
                         map_cfg.loop.pnp_max_error, false);
     parser->parse_config("loop_guided_radius_px",
                         map_cfg.loop.guided_radius_px, false);
+    parser->parse_config("loop_island_2d3d",
+                        map_cfg.loop.island_2d3d, false);
+    parser->parse_config("loop_island_epipolar_px",
+                        map_cfg.loop.island_epipolar_px, false);
     parser->parse_config("loop_max_rot_vs_essential_deg",
                         map_cfg.loop.max_rot_vs_essential_deg, false);
     parser->parse_config("loop_max_correction_m",
@@ -337,6 +341,12 @@ namespace vslam
                         map_cfg.loop.pose_graph_loop_min_rot_sigma_deg, false);
     parser->parse_config("loop_pose_graph_loop_min_trans_sigma_m",
                         map_cfg.loop.pose_graph_loop_min_trans_sigma_m, false);
+    parser->parse_config("loop_rover_enabled",
+                        map_cfg.loop.rover_enabled, false);
+    parser->parse_config("loop_rover_min_threshold_m",
+                        map_cfg.loop.rover_min_threshold_m, false);
+    parser->parse_config("loop_rover_threshold_ratio",
+                        map_cfg.loop.rover_threshold_ratio, false);
     parser->parse_config("loop_fuse_radius_px",
                         map_cfg.loop.fuse_radius_px, false);
     parser->parse_config("loop_fuse_max_point_distance",

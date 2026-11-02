@@ -150,6 +150,8 @@ namespace vslam
     int max_correct_connected = 20;
     double pnp_max_error = 3.0;
     double guided_radius_px = 7.5;
+    bool island_2d3d = true;
+    double island_epipolar_px = 4.0;
     double max_rot_vs_essential_deg = 3.0;
     double max_correction_m = 3.0;
     double max_correction_deg = 20.0;
@@ -160,6 +162,9 @@ namespace vslam
     double pose_graph_odom_trans_sigma_ratio = 0.03;
     double pose_graph_loop_min_rot_sigma_deg = 0.2;
     double pose_graph_loop_min_trans_sigma_m = 0.02;
+    bool rover_enabled = true;
+    double rover_min_threshold_m = 0.5;
+    double rover_threshold_ratio = 0.01;
     double fuse_radius_px = 6.0;
     double fuse_max_point_distance = 0.2;
 

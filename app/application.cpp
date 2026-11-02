@@ -274,6 +274,8 @@ namespace vslam
                         map_cfg.mapper.ba_vio_prior_trans_sigma_ratio, false);
     parser->parse_config("mapper_ba_vio_prior_max_gap",
                         map_cfg.mapper.ba_vio_prior_max_gap, false);
+    parser->parse_config("mapper_ba_loop_max_num_iterations",
+                        map_cfg.mapper.ba_loop_max_num_iterations, false);
     parser->parse_config("mapper_ba_min_window_images",
                         map_cfg.mapper.ba_min_window_images, false);
     parser->parse_config("mapper_ba_temporal_window_images",

@@ -123,6 +123,7 @@ namespace vslam
     double ba_vio_prior_trans_sigma_m = 0.02;
     double ba_vio_prior_trans_sigma_ratio = 0.03;
     int ba_vio_prior_max_gap = 5;
+    int ba_loop_max_num_iterations = 50;
     int ba_min_window_images = 4;
     int ba_temporal_window_images = 5;
     int sparse_write_every_n = 10;

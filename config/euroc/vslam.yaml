@@ -115,6 +115,7 @@ mapper_ba_vio_prior_rot_sigma_deg: 1.0     # <=0 disables
 mapper_ba_vio_prior_trans_sigma_m: 0.02
 mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step length
 mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
+mapper_ba_loop_max_num_iterations: 50      # loop BA over the corrected chain (local BA uses 10)
 # Local BA window padding when covisibility is weak (e.g. VIO-fallback frames)
 mapper_ba_min_window_images: 4             # pad windows smaller than this; <=0 disables
 mapper_ba_temporal_window_images: 5        # at most this many recent registered KFs added

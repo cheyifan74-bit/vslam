@@ -40,7 +40,50 @@ namespace vslam
   bool Map::initialize()
   {
     ready_ = false;
-    if (config_.clear_old_session && !clearOldSession())
+    resuming_ = false;
+    if (config_.resume_existing)
+    {
+      if (hasExistingSession())
+      {
+        resuming_ = true;
+        PRINT_INFO("[MAP]: Resuming existing session. root=%s db=%s\n",
+                   config_.map_root_dir.c_str(), database_path_.c_str());
+      }
+      else if (hasDatabaseWithoutSparse())
+      {
+        // A leftover database without a sparse model. If it holds no images
+        // (e.g. a crash right after init), start over; otherwise never
+        // silently wipe it.
+        std::size_t num_images = 0;
+        try
+        {
+          colmap::DatabaseSession db(database_path_);
+          num_images = db->ReadAllImages().size();
+        }
+        catch (const std::exception &e)
+        {
+          PRINT_ERROR("[MAP]: Failed to inspect existing database %s: %s\n",
+                      database_path_.c_str(), e.what());
+          return false;
+        }
+        if (num_images > 0)
+        {
+          PRINT_ERROR("[MAP]: map_resume_existing=true but the sparse model is "
+                      "missing under %s while the database holds %zu image(s). "
+                      "Set map_resume_existing=false to start a new session "
+                      "(this deletes the database).\n",
+                      sparse_dir_.c_str(), num_images);
+          return false;
+        }
+        PRINT_INFO("[MAP]: Existing database has no images, starting a new "
+                   "session.\n");
+      }
+      else
+      {
+        PRINT_INFO("[MAP]: No previous session found, starting a new one.\n");
+      }
+    }
+    else if (config_.clear_old_session && !clearOldSession())
     {
       return false;
     }
@@ -53,9 +96,27 @@ namespace vslam
       return false;
     }
     ready_ = true;
-    PRINT_INFO("[MAP]: Session ready. root=%s db=%s\n", config_.map_root_dir.c_str(),
-               database_path_.c_str());
+    PRINT_INFO("[MAP]: Session ready. root=%s db=%s resume=%d\n",
+               config_.map_root_dir.c_str(), database_path_.c_str(),
+               static_cast<int>(resuming_));
     return true;
+  }
+
+  bool Map::hasExistingSession() const
+  {
+    if (!fs::exists(database_path_))
+    {
+      return false;
+    }
+    const fs::path sparse(sparse_dir_);
+    return fs::exists(sparse / "cameras.bin") &&
+           fs::exists(sparse / "images.bin") &&
+           fs::exists(sparse / "points3D.bin");
+  }
+
+  bool Map::hasDatabaseWithoutSparse() const
+  {
+    return fs::exists(database_path_) && !hasExistingSession();
   }
 
   bool Map::clearOldSession() const

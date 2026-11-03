@@ -85,13 +85,49 @@ namespace vslam
     options.local_map_refine_radius_px = cfg.local_map_refine_radius_px;
     options.local_map_max_desc_distance = cfg.local_map_max_desc_distance;
     options.local_map_max_ratio = cfg.local_map_max_ratio;
+    options.scale_check_max_ratio = cfg.scale_check_max_ratio;
+    options.local_map_spatial_num_images = cfg.local_map_spatial_num_images;
+    options.local_map_spatial_max_distance_m =
+        cfg.local_map_spatial_max_distance_m;
+    options.local_map_spatial_max_angle_deg =
+        cfg.local_map_spatial_max_angle_deg;
     options.ba_vio_prior_rot_sigma_deg = cfg.ba_vio_prior_rot_sigma_deg;
     options.ba_vio_prior_trans_sigma_m = cfg.ba_vio_prior_trans_sigma_m;
     options.ba_vio_prior_trans_sigma_ratio = cfg.ba_vio_prior_trans_sigma_ratio;
     options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
+    options.ba_fixed_min_points = cfg.ba_fixed_min_points;
+    options.ba_loop_max_num_iterations = cfg.ba_loop_max_num_iterations;
     options.ba_min_window_images = cfg.ba_min_window_images;
     options.ba_temporal_window_images = cfg.ba_temporal_window_images;
     options.sparse_write_every_n = cfg.sparse_write_every_n;
+    options.cull_enabled = cfg.cull_enabled;
+    options.cull_redundant_ratio = cfg.cull_redundant_ratio;
+    options.cull_min_other_observers = cfg.cull_min_other_observers;
+    options.cull_max_scale_ratio = cfg.cull_max_scale_ratio;
+    options.cull_min_num_points = cfg.cull_min_num_points;
+    options.cull_protect_recent = cfg.cull_protect_recent;
+    options.cull_max_neighbor_distance_m = cfg.cull_max_neighbor_distance_m;
+    options.cull_max_neighbor_angle_deg = cfg.cull_max_neighbor_angle_deg;
+    options.cull_max_per_frame = cfg.cull_max_per_frame;
+    options.cull_prior_session = cfg.cull_prior_session;
+    options.insert_check_enabled = cfg.insert_check_enabled;
+    options.insert_redundant_ratio = cfg.insert_redundant_ratio;
+    options.insert_ref_tracked_ratio = cfg.insert_ref_tracked_ratio;
+    options.insert_min_tracked = cfg.insert_min_tracked;
+    options.insert_max_kf_distance_m = cfg.insert_max_kf_distance_m;
+    options.insert_max_kf_angle_deg = cfg.insert_max_kf_angle_deg;
+    options.insert_max_consecutive_skips = cfg.insert_max_consecutive_skips;
+    options.point_stats_enabled = cfg.point_stats_enabled;
+    options.stale_min_visible = cfg.stale_min_visible;
+    options.stale_max_found_ratio = cfg.stale_max_found_ratio;
+    options.stale_session_decay = cfg.stale_session_decay;
+    options.stale_prior_session_only = cfg.stale_prior_session_only;
+    options.capacity_enabled = cfg.capacity_enabled;
+    options.capacity_voxel_m = cfg.capacity_voxel_m;
+    options.capacity_yaw_bins = cfg.capacity_yaw_bins;
+    options.capacity_max_per_cell = cfg.capacity_max_per_cell;
+    options.capacity_replace_ratio = cfg.capacity_replace_ratio;
+    options.capacity_min_session_frames = cfg.capacity_min_session_frames;
     return options;
   }
 
@@ -109,6 +145,7 @@ namespace vslam
     options.min_mixvpr_score = cfg.min_mixvpr_score;
     options.topk = cfg.topk;
     options.min_covisibility_points = cfg.min_covisibility_points;
+    options.min_candidate_points = cfg.min_candidate_points;
     options.min_num_matches = cfg.min_num_matches;
     options.min_num_verified_matches = cfg.min_num_verified_matches;
     options.min_num_3d_correspondences = cfg.min_num_3d_correspondences;
@@ -117,12 +154,31 @@ namespace vslam
     options.max_correct_connected = cfg.max_correct_connected;
     options.pnp_max_error = cfg.pnp_max_error;
     options.guided_radius_px = cfg.guided_radius_px;
+    options.scale_check_max_ratio = cfg.scale_check_max_ratio;
+    options.island_2d3d = cfg.island_2d3d;
+    options.island_epipolar_px = cfg.island_epipolar_px;
     options.max_rot_vs_essential_deg = cfg.max_rot_vs_essential_deg;
     options.max_correction_m = cfg.max_correction_m;
     options.max_correction_deg = cfg.max_correction_deg;
     options.pose_graph_min_covis = cfg.pose_graph_min_covis;
+    options.pose_graph_4dof = cfg.pose_graph_4dof;
+    options.pose_graph_vio_odometry = cfg.pose_graph_vio_odometry;
+    options.pose_graph_odom_rot_sigma_deg = cfg.pose_graph_odom_rot_sigma_deg;
+    options.pose_graph_odom_trans_sigma_m = cfg.pose_graph_odom_trans_sigma_m;
+    options.pose_graph_odom_trans_sigma_ratio = cfg.pose_graph_odom_trans_sigma_ratio;
+    options.pose_graph_loop_min_rot_sigma_deg = cfg.pose_graph_loop_min_rot_sigma_deg;
+    options.pose_graph_loop_min_trans_sigma_m = cfg.pose_graph_loop_min_trans_sigma_m;
+    options.rover_enabled = cfg.rover_enabled;
+    options.rover_min_threshold_m = cfg.rover_min_threshold_m;
+    options.rover_threshold_ratio = cfg.rover_threshold_ratio;
     options.fuse_radius_px = cfg.fuse_radius_px;
     options.fuse_max_point_distance = cfg.fuse_max_point_distance;
+    options.reloc_topk = cfg.reloc_topk;
+    options.reloc_min_mixvpr_score = cfg.reloc_min_mixvpr_score;
+    options.reloc_min_num_matches = cfg.reloc_min_num_matches;
+    options.reloc_min_num_3d_correspondences = cfg.reloc_min_num_3d_correspondences;
+    options.reloc_min_inliers = cfg.reloc_min_inliers;
+    options.reloc_max_rot_vs_essential_deg = cfg.reloc_max_rot_vs_essential_deg;
     return options;
   }
 

@@ -99,6 +99,14 @@ namespace vslam
       map_manager->setVisualizationCallback(
           [this](const MapVisualizationSnapshot &snapshot) { publishMapVisualization(snapshot); });
 
+    // See map_viz_timer_: RViz joins late and its default QoS is volatile, so the
+    // initial snapshot of a resumed map would otherwise be dropped.
+    if (auto map_manager = app_->getMapManager())
+    {
+      map_viz_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [this, map_manager]()
+                                                { map_manager->publishVisualization(); });
+    }
+
     PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect topics...\n");
     setupKeyframeSelectTopics();
 

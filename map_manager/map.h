@@ -35,6 +35,9 @@ namespace vslam
     /// Session root; COLMAP layout lives under <map_root_dir>/map/
     std::string map_root_dir = "/tmp/vslam_map";
     bool clear_old_session = true; ///< remove old database / sparse on init
+    /// Reuse an existing session (load sparse + database) instead of starting
+    /// a new one. Takes precedence over clear_old_session.
+    bool resume_existing = false;
     bool save_images = true;
     std::string image_extension = "png";
   };
@@ -60,6 +63,15 @@ namespace vslam
 
     /// clearOldSession (optional) + initDirectories + initDatabase
     bool initialize();
+
+    /// True when a previous session is on disk and can be loaded: database.db
+    /// plus a sparse model with registered images.
+    bool hasExistingSession() const;
+    /// True when database.db exists but the sparse model is missing/empty.
+    /// Reported separately so resume never silently starts from scratch.
+    bool hasDatabaseWithoutSparse() const;
+    /// Resuming a previous session; meaningful after initialize().
+    bool isResuming() const { return resuming_; }
 
     bool isReady() const;
     const MapConfig &config() const;
@@ -95,6 +107,7 @@ namespace vslam
     MapConfig config_;
     std::vector<CameraParams> cameras_;
     bool ready_ = false;
+    bool resuming_ = false;
 
     std::string map_dir_;
     std::string database_dir_;

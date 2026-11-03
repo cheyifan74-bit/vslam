@@ -111,6 +111,11 @@ namespace vslam
     // Subscribers must outlive the Synchronizer (its dtor disconnects from them): keep this order.
     std::vector<std::shared_ptr<message_filters::Subscriber<ImageMsg>>> sync_subs_cam_;
     std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
+
+    /// RViz subscribes with default (volatile) QoS, so a snapshot published before
+    /// it connects is never seen. Republish the current map periodically so a
+    /// resumed map appears as soon as RViz starts (and survives an RViz restart).
+    rclcpp::TimerBase::SharedPtr map_viz_timer_;
   };
 
 } // namespace vslam

@@ -179,6 +179,7 @@ namespace vslam
 
     parser->parse_config("map_root_dir", map_cfg.map.map_root_dir, false);
     parser->parse_config("map_clear_old_session", map_cfg.map.clear_old_session, false);
+    parser->parse_config("map_resume_existing", map_cfg.map.resume_existing, false);
     parser->parse_config("map_save_images", map_cfg.map.save_images, false);
     parser->parse_config("map_image_extension", map_cfg.map.image_extension, false);
 
@@ -265,6 +266,14 @@ namespace vslam
                         map_cfg.mapper.local_map_max_desc_distance, false);
     parser->parse_config("mapper_local_map_max_ratio",
                         map_cfg.mapper.local_map_max_ratio, false);
+    parser->parse_config("mapper_scale_check_max_ratio",
+                        map_cfg.mapper.scale_check_max_ratio, false);
+    parser->parse_config("mapper_local_map_spatial_num_images",
+                        map_cfg.mapper.local_map_spatial_num_images, false);
+    parser->parse_config("mapper_local_map_spatial_max_distance_m",
+                        map_cfg.mapper.local_map_spatial_max_distance_m, false);
+    parser->parse_config("mapper_local_map_spatial_max_angle_deg",
+                        map_cfg.mapper.local_map_spatial_max_angle_deg, false);
     parser->parse_config("mapper_ba_vio_prior_rot_sigma_deg",
                         map_cfg.mapper.ba_vio_prior_rot_sigma_deg, false);
     parser->parse_config("mapper_ba_vio_prior_trans_sigma_m",
@@ -273,12 +282,73 @@ namespace vslam
                         map_cfg.mapper.ba_vio_prior_trans_sigma_ratio, false);
     parser->parse_config("mapper_ba_vio_prior_max_gap",
                         map_cfg.mapper.ba_vio_prior_max_gap, false);
+    parser->parse_config("mapper_ba_fixed_min_points",
+                        map_cfg.mapper.ba_fixed_min_points, false);
+    parser->parse_config("mapper_ba_loop_max_num_iterations",
+                        map_cfg.mapper.ba_loop_max_num_iterations, false);
     parser->parse_config("mapper_ba_min_window_images",
                         map_cfg.mapper.ba_min_window_images, false);
     parser->parse_config("mapper_ba_temporal_window_images",
                         map_cfg.mapper.ba_temporal_window_images, false);
     parser->parse_config("mapper_sparse_write_every_n",
                         map_cfg.mapper.sparse_write_every_n, false);
+    parser->parse_config("mapper_cull_enabled", map_cfg.mapper.cull_enabled, false);
+    parser->parse_config("mapper_cull_redundant_ratio",
+                        map_cfg.mapper.cull_redundant_ratio, false);
+    parser->parse_config("mapper_cull_min_other_observers",
+                        map_cfg.mapper.cull_min_other_observers, false);
+    parser->parse_config("mapper_cull_max_scale_ratio",
+                        map_cfg.mapper.cull_max_scale_ratio, false);
+    parser->parse_config("mapper_cull_min_num_points",
+                        map_cfg.mapper.cull_min_num_points, false);
+    parser->parse_config("mapper_cull_protect_recent",
+                        map_cfg.mapper.cull_protect_recent, false);
+    parser->parse_config("mapper_cull_max_neighbor_distance_m",
+                        map_cfg.mapper.cull_max_neighbor_distance_m, false);
+    parser->parse_config("mapper_cull_max_neighbor_angle_deg",
+                        map_cfg.mapper.cull_max_neighbor_angle_deg, false);
+    parser->parse_config("mapper_cull_max_per_frame",
+                        map_cfg.mapper.cull_max_per_frame, false);
+    parser->parse_config("mapper_cull_prior_session",
+                        map_cfg.mapper.cull_prior_session, false);
+    parser->parse_config("mapper_insert_check_enabled",
+                        map_cfg.mapper.insert_check_enabled, false);
+    parser->parse_config("mapper_insert_redundant_ratio",
+                        map_cfg.mapper.insert_redundant_ratio, false);
+    parser->parse_config("mapper_insert_ref_tracked_ratio",
+                        map_cfg.mapper.insert_ref_tracked_ratio, false);
+    parser->parse_config("mapper_insert_min_tracked",
+                        map_cfg.mapper.insert_min_tracked, false);
+    parser->parse_config("mapper_insert_max_kf_distance_m",
+                        map_cfg.mapper.insert_max_kf_distance_m, false);
+    parser->parse_config("mapper_insert_max_kf_angle_deg",
+                        map_cfg.mapper.insert_max_kf_angle_deg, false);
+    parser->parse_config("mapper_insert_max_consecutive_skips",
+                        map_cfg.mapper.insert_max_consecutive_skips, false);
+    parser->parse_config("mapper_point_stats_enabled",
+                        map_cfg.mapper.point_stats_enabled, false);
+    parser->parse_config("mapper_stale_min_visible",
+                        map_cfg.mapper.stale_min_visible, false);
+    parser->parse_config("mapper_stale_max_found_ratio",
+                        map_cfg.mapper.stale_max_found_ratio, false);
+    parser->parse_config("mapper_stale_prior_session_only",
+                        map_cfg.mapper.stale_prior_session_only, false);
+    parser->parse_config("mapper_stale_session_decay",
+                        map_cfg.mapper.stale_session_decay, false);
+    parser->parse_config("mapper_capacity_enabled",
+                        map_cfg.mapper.capacity_enabled, false);
+    parser->parse_config("mapper_capacity_voxel_m",
+                        map_cfg.mapper.capacity_voxel_m, false);
+    parser->parse_config("mapper_capacity_yaw_bins",
+                        map_cfg.mapper.capacity_yaw_bins, false);
+    parser->parse_config("mapper_capacity_max_per_cell",
+                        map_cfg.mapper.capacity_max_per_cell, false);
+    parser->parse_config("mapper_capacity_replace_ratio",
+                        map_cfg.mapper.capacity_replace_ratio, false);
+    parser->parse_config("mapper_capacity_min_session_frames",
+                        map_cfg.mapper.capacity_min_session_frames, false);
+    parser->parse_config("map_compact_database_on_exit",
+                        map_cfg.mapper.compact_database_on_exit, false);
 
     parser->parse_config("loop_enabled", map_cfg.loop.enabled, false);
     parser->parse_config("loop_mixvpr_engine_path", map_cfg.loop.mixvpr_engine_path, false);
@@ -298,6 +368,8 @@ namespace vslam
                         map_cfg.loop.topk, false);
     parser->parse_config("loop_min_covisibility_points",
                         map_cfg.loop.min_covisibility_points, false);
+    parser->parse_config("loop_min_candidate_points",
+                        map_cfg.loop.min_candidate_points, false);
     parser->parse_config("loop_min_num_matches",
                         map_cfg.loop.min_num_matches, false);
     parser->parse_config("loop_min_num_verified_matches",
@@ -314,6 +386,12 @@ namespace vslam
                         map_cfg.loop.pnp_max_error, false);
     parser->parse_config("loop_guided_radius_px",
                         map_cfg.loop.guided_radius_px, false);
+    parser->parse_config("loop_scale_check_max_ratio",
+                        map_cfg.loop.scale_check_max_ratio, false);
+    parser->parse_config("loop_island_2d3d",
+                        map_cfg.loop.island_2d3d, false);
+    parser->parse_config("loop_island_epipolar_px",
+                        map_cfg.loop.island_epipolar_px, false);
     parser->parse_config("loop_max_rot_vs_essential_deg",
                         map_cfg.loop.max_rot_vs_essential_deg, false);
     parser->parse_config("loop_max_correction_m",
@@ -322,10 +400,41 @@ namespace vslam
                         map_cfg.loop.max_correction_deg, false);
     parser->parse_config("loop_pose_graph_min_covis",
                         map_cfg.loop.pose_graph_min_covis, false);
+    parser->parse_config("loop_pose_graph_4dof",
+                        map_cfg.loop.pose_graph_4dof, false);
+    parser->parse_config("loop_pose_graph_vio_odometry",
+                        map_cfg.loop.pose_graph_vio_odometry, false);
+    parser->parse_config("loop_pose_graph_odom_rot_sigma_deg",
+                        map_cfg.loop.pose_graph_odom_rot_sigma_deg, false);
+    parser->parse_config("loop_pose_graph_odom_trans_sigma_m",
+                        map_cfg.loop.pose_graph_odom_trans_sigma_m, false);
+    parser->parse_config("loop_pose_graph_odom_trans_sigma_ratio",
+                        map_cfg.loop.pose_graph_odom_trans_sigma_ratio, false);
+    parser->parse_config("loop_pose_graph_loop_min_rot_sigma_deg",
+                        map_cfg.loop.pose_graph_loop_min_rot_sigma_deg, false);
+    parser->parse_config("loop_pose_graph_loop_min_trans_sigma_m",
+                        map_cfg.loop.pose_graph_loop_min_trans_sigma_m, false);
+    parser->parse_config("loop_rover_enabled",
+                        map_cfg.loop.rover_enabled, false);
+    parser->parse_config("loop_rover_min_threshold_m",
+                        map_cfg.loop.rover_min_threshold_m, false);
+    parser->parse_config("loop_rover_threshold_ratio",
+                        map_cfg.loop.rover_threshold_ratio, false);
     parser->parse_config("loop_fuse_radius_px",
                         map_cfg.loop.fuse_radius_px, false);
     parser->parse_config("loop_fuse_max_point_distance",
                         map_cfg.loop.fuse_max_point_distance, false);
+    parser->parse_config("loop_reloc_topk", map_cfg.loop.reloc_topk, false);
+    parser->parse_config("loop_reloc_min_mixvpr_score",
+                        map_cfg.loop.reloc_min_mixvpr_score, false);
+    parser->parse_config("loop_reloc_min_num_matches",
+                        map_cfg.loop.reloc_min_num_matches, false);
+    parser->parse_config("loop_reloc_min_num_3d_correspondences",
+                        map_cfg.loop.reloc_min_num_3d_correspondences, false);
+    parser->parse_config("loop_reloc_min_inliers",
+                        map_cfg.loop.reloc_min_inliers, false);
+    parser->parse_config("loop_reloc_max_rot_vs_essential_deg",
+                        map_cfg.loop.reloc_max_rot_vs_essential_deg, false);
 
     if (!parser->successful())
     {

@@ -119,14 +119,49 @@ namespace vslam
     double local_map_refine_radius_px = 4.0;
     double local_map_max_desc_distance = 0.7;
     double local_map_max_ratio = 0.9;
+    double scale_check_max_ratio = 0.0;
+    int local_map_spatial_num_images = 0;
+    double local_map_spatial_max_distance_m = 2.0;
+    double local_map_spatial_max_angle_deg = 45.0;
     double ba_vio_prior_rot_sigma_deg = 1.0;
     double ba_vio_prior_trans_sigma_m = 0.02;
     double ba_vio_prior_trans_sigma_ratio = 0.03;
     int ba_vio_prior_max_gap = 5;
+    int ba_fixed_min_points = 0;
     int ba_loop_max_num_iterations = 50;
     int ba_min_window_images = 4;
     int ba_temporal_window_images = 5;
     int sparse_write_every_n = 10;
+    bool cull_enabled = false;
+    double cull_redundant_ratio = 0.9;
+    int cull_min_other_observers = 3;
+    double cull_max_scale_ratio = 1.2;
+    int cull_min_num_points = 30;
+    int cull_protect_recent = 5;
+    double cull_max_neighbor_distance_m = 3.0;
+    double cull_max_neighbor_angle_deg = 45.0;
+    int cull_max_per_frame = 1;
+    bool cull_prior_session = false;
+    bool insert_check_enabled = false;
+    double insert_redundant_ratio = 0.75;
+    double insert_ref_tracked_ratio = 0.9;
+    int insert_min_tracked = 40;
+    double insert_max_kf_distance_m = 1.0;
+    double insert_max_kf_angle_deg = 30.0;
+    int insert_max_consecutive_skips = 10;
+    bool point_stats_enabled = false;
+    int stale_min_visible = 15;
+    double stale_max_found_ratio = 0.25;
+    double stale_session_decay = 0.5;
+    bool stale_prior_session_only = true;
+    bool capacity_enabled = false;
+    double capacity_voxel_m = 1.0;
+    int capacity_yaw_bins = 4;
+    int capacity_max_per_cell = 2;
+    double capacity_replace_ratio = 0.5;
+    int capacity_min_session_frames = 20;
+    /// Delete culled / dropped keyframes from database.db and images/ on exit.
+    bool compact_database_on_exit = false;
   };
 
   struct LoopCloserConfig
@@ -142,6 +177,7 @@ namespace vslam
     double min_mixvpr_score = 0.4;
     int topk = 5;
     int min_covisibility_points = 15;
+    int min_candidate_points = 0;
     int min_num_matches = 20;
     int min_num_verified_matches = 40;
     int min_num_3d_correspondences = 20;
@@ -150,6 +186,7 @@ namespace vslam
     int max_correct_connected = 20;
     double pnp_max_error = 3.0;
     double guided_radius_px = 7.5;
+    double scale_check_max_ratio = 0.0;
     bool island_2d3d = true;
     double island_epipolar_px = 4.0;
     double max_rot_vs_essential_deg = 3.0;
@@ -157,6 +194,7 @@ namespace vslam
     double max_correction_deg = 20.0;
     int pose_graph_min_covis = 50;
     bool pose_graph_4dof = true;
+    bool pose_graph_vio_odometry = false;
     double pose_graph_odom_rot_sigma_deg = 1.0;
     double pose_graph_odom_trans_sigma_m = 0.02;
     double pose_graph_odom_trans_sigma_ratio = 0.03;

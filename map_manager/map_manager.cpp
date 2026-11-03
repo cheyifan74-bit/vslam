@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -38,6 +39,24 @@ namespace vslam
     if (incremental_mapper_)
     {
       incremental_mapper_->FlushSparse();
+      if (map_ && config_.mapper.compact_database_on_exit)
+      {
+        std::vector<std::string> removed_names;
+        const std::size_t num_removed =
+            incremental_mapper_->CompactDatabase(&removed_names);
+        std::size_t num_files = 0;
+        for (const auto &name : removed_names)
+        {
+          std::error_code ec;
+          if (std::filesystem::remove(std::filesystem::path(map_->imagesDir()) / name, ec))
+          {
+            ++num_files;
+          }
+        }
+        PRINT_INFO("[MAP_MANAGER]: Compacted database: removed %zu culled keyframe(s), "
+                   "%zu image file(s)\n",
+                   num_removed, num_files);
+      }
     }
   }
 

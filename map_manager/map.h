@@ -28,6 +28,8 @@ namespace vslam
     double k2 = 0.0;
     double k3 = 0.0;
     double k4 = 0.0;
+    /// Row-major cam_from_imu (T_cam_imu). Identity until the Kalibr file is read.
+    double T_cam_imu[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   };
 
   struct MapConfig

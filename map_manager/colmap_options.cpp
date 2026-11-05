@@ -69,6 +69,7 @@ namespace vslam
     options.ba_min_covisibility_points = cfg.ba_min_covisibility_points;
     options.filter_max_reproj_error = cfg.filter_max_reproj_error;
     options.filter_min_tri_angle = cfg.filter_min_tri_angle;
+    options.filter_two_view_min_tri_angle = cfg.filter_two_view_min_tri_angle;
     options.triangulation.max_transitivity = cfg.tri_max_transitivity;
     options.triangulation.create_max_angle_error = cfg.tri_create_max_angle_error;
     options.triangulation.continue_max_angle_error =

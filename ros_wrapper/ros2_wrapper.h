@@ -11,6 +11,7 @@
 #define VSLAM_ROS2_WRAPPER_H
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -78,9 +79,11 @@ namespace vslam
     void callbackStereo(const ImageMsg::ConstSharedPtr msg0, const ImageMsg::ConstSharedPtr msg1, int cam_id0, int cam_id1);
     void callbackPose(const PoseMsg::ConstSharedPtr pose_msg);
 
-    void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id);
+    void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
+                           const cv::Mat &image_right = cv::Mat());
     void publishKeyframeDebug(const Keyframe &kf);
     void publishMapVisualization(const MapVisualizationSnapshot &snapshot);
+    void publishDenseCloud(const DenseCloud &cloud);
     static Pose3d poseFromMsg(const PoseMsg &msg);
     /// Convert poseimu (IMU in global) to left-camera pose in global using OpenVINS extrinsics.
     bool convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const;
@@ -103,6 +106,9 @@ namespace vslam
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_global_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_local_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_map_markers_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dense_cloud_;
+    std::mutex dense_cloud_mutex_;
+    DenseCloud last_dense_cloud_;
     bool kf_publish_debug_ = true;
 
     std::vector<rclcpp::Subscription<ImageMsg>::SharedPtr> camera_subs_;

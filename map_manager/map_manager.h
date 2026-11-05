@@ -19,6 +19,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+#include "dense_mapper/dense_mapper.h"
 #include "keyframe_select/keyframe.h"
 #include "keyframe_select/keyframe_queue.h"
 #include "map_manager/map.h"
@@ -106,6 +107,7 @@ namespace vslam
     int ba_min_covisibility_points = 15;
     double filter_max_reproj_error = 1.0;
     double filter_min_tri_angle = 1.5;
+    double filter_two_view_min_tri_angle = 8.0;
     int tri_max_transitivity = 1;
     double tri_create_max_angle_error = 2.0;
     double tri_continue_max_angle_error = 2.0;
@@ -223,6 +225,7 @@ namespace vslam
     MatchConfig match;
     MapperConfig mapper;
     LoopCloserConfig loop;
+    DenseConfig dense;
   };
 
   /**
@@ -257,6 +260,8 @@ namespace vslam
     /// points in RViz before the first keyframe of this session is processed.
     void setVisualizationCallback(
         std::function<void(const MapVisualizationSnapshot &)> callback);
+    /// Surface cloud of the TSDF. May be invoked from the dense thread.
+    void setDenseCloudCallback(DenseMapper::CloudCallback callback);
 
     /// Publish the current reconstruction (restored map + every processed
     /// keyframe) to the visualization callback. No-op when no callback is set or
@@ -293,6 +298,8 @@ namespace vslam
     /// Only touched while holding mapper_mutex_.
     uint32_t last_processed_image_id_ = 0;
     std::function<void(const MapVisualizationSnapshot &)> visualization_callback_;
+    std::unique_ptr<DenseMapper> dense_mapper_;
+    DenseMapper::CloudCallback dense_cloud_callback_;
   };
 
 } // namespace vslam

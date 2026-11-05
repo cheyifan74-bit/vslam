@@ -11,8 +11,8 @@
 # ------------------------------------------------------------------
 
 # Selection thresholds
-kf_dist_thresh: 1          # meters; select if translation from last KF exceeds this
-kf_angle_thresh_deg: 20.0    # degrees; select if rotation from last KF exceeds this
+kf_dist_thresh: 0.5          # meters; select if translation from last KF exceeds this
+kf_angle_thresh_deg: 15.0    # degrees; select if rotation from last KF exceeds this
 
 # Image-pose timestamp sync
 kf_sync_slop: 0.02           # seconds; max |t_image - t_pose| to pair
@@ -95,14 +95,16 @@ mapper_abs_pose_min_inlier_ratio: 0.25
 mapper_ba_local_num_images: 30              # 0 = no cap on first-level window
 mapper_ba_min_covisibility_points: 15      # first-level = shared 3D >= this
 mapper_filter_max_reproj_error: 2.0        # pixels; FilterPoints3DInImages
-mapper_filter_min_tri_angle: 1.5           # degrees; FilterPoints3DInImages
+mapper_filter_min_tri_angle: 3.0           # degrees; FilterPoints3DInImages
+# Tracks that shrink to two views after filtering. Angle below this is deleted.
+mapper_filter_two_view_min_tri_angle: 8.0
 mapper_tri_max_transitivity: 3
 mapper_tri_create_max_angle_error: 1.0     # degrees; new triangulation
 mapper_tri_continue_max_angle_error: 2.0   # degrees; continue existing tracks
 mapper_tri_merge_max_reproj_error: 4.0     # pixels; MergeTracks
 mapper_tri_complete_max_reproj_error: 4.0  # pixels; CompleteTracks / CompleteImage
 mapper_tri_complete_max_transitivity: 5
-mapper_tri_min_angle: 2.0                  # degrees; min pairwise triangulation angle
+mapper_tri_min_angle: 3.0                  # degrees; min pairwise triangulation angle
 mapper_tri_ignore_two_view_tracks: true   # false = keep 2-view tracks
 # Local-map projection matching (points of the last N registered KFs, descriptor-checked)
 mapper_local_map_num_images: 15            # <=0 disables
@@ -212,3 +214,26 @@ loop_reloc_min_num_matches: 30        # feature matches with the candidate
 loop_reloc_min_num_3d_correspondences: 40  # 2D-3D pairs needed to run PnP
 loop_reloc_min_inliers: 80            # PnP inliers to accept the relocalization
 loop_reloc_max_rot_vs_essential_deg: 3.0   # PnP vs essential rotation; <=0 disables
+
+dense_enabled: true
+# 896x480 keeps ~110 deg of the fisheye's ~117 deg horizontal field. 512x512 crops the right side.
+dense_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/S2M2_M_896_480_fp16.engine"
+dense_rect_width: 896
+dense_rect_height: 480
+dense_voxel_m: 0.02
+dense_truncation_m: 0.15
+dense_min_range_m: 0.2
+dense_max_range_m: 4.0
+dense_min_confidence: 0.5
+dense_min_visible: 0.5
+dense_weight_reference_range_m: 2.0
+dense_saturate_gray: 0.0
+dense_sparse_depth_ratio: 1.25
+dense_sparse_depth_margin_m: 0.4
+dense_sparse_dilate_px: 12
+# A pixel enters the volume only when an earlier keyframe agrees and none
+# sees through it. Raw depth is still stored. 0 fuses every pixel.
+dense_verify_frames: 8
+dense_verify_min_baseline_m: 0.3
+dense_verify_agree_m: 0.15
+dense_verify_gap_m: 0.4

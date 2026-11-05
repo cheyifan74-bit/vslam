@@ -43,7 +43,10 @@ namespace vslam
     KeyframeSelect &operator=(const KeyframeSelect &) = delete;
 
     /// Enqueue left-camera image (cam_id != 0 ignored). Non-blocking aside from clone+lock.
-    void feedImage(double timestamp, const cv::Mat &image, int cam_id = 0);
+    /// `image_right` is kept with the same timestamp and attached when this frame
+    /// is selected as a keyframe. Dense mapping uses it; sparse mapping does not.
+    void feedImage(double timestamp, const cv::Mat &image, int cam_id = 0,
+                   const cv::Mat &image_right = cv::Mat());
 
     /// Enqueue pose. Non-blocking aside from lock.
     void feedPose(double timestamp, const Pose3d &pose, const std::string &frame_id = "global");
@@ -60,6 +63,7 @@ namespace vslam
     {
       double timestamp = 0.0;
       cv::Mat image;
+      cv::Mat image_right;
       int cam_id = 0;
     };
 

@@ -95,16 +95,31 @@ namespace vslam
     pub_map_global_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("map_points_global", 1);
     pub_map_local_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("map_points_local", 1);
     pub_map_markers_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("map_visualization", 1);
+    pub_dense_cloud_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("dense_cloud", 1);
     if (auto map_manager = app_->getMapManager())
+    {
       map_manager->setVisualizationCallback(
           [this](const MapVisualizationSnapshot &snapshot) { publishMapVisualization(snapshot); });
+      map_manager->setDenseCloudCallback(
+          [this](const DenseCloud &cloud) { publishDenseCloud(cloud); });
+    }
 
     // See map_viz_timer_: RViz joins late and its default QoS is volatile, so the
     // initial snapshot of a resumed map would otherwise be dropped.
     if (auto map_manager = app_->getMapManager())
     {
-      map_viz_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [this, map_manager]()
-                                                { map_manager->publishVisualization(); });
+      map_viz_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [this, map_manager]() {
+        map_manager->publishVisualization();
+        DenseCloud cloud;
+        {
+          std::lock_guard<std::mutex> lock(dense_cloud_mutex_);
+          cloud = last_dense_cloud_;
+        }
+        if (!cloud.xyz.empty())
+        {
+          publishDenseCloud(cloud);
+        }
+      });
     }
 
     PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect topics...\n");
@@ -197,7 +212,8 @@ namespace vslam
     kf_select->feedPose(stampToSec(pose_msg->header.stamp), camera_pose, pose_msg->header.frame_id);
   }
 
-  void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id)
+  void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
+                                     const cv::Mat &image_right)
   {
     auto kf_select = app_->getKeyframeSelect();
     if (!kf_select)
@@ -206,7 +222,7 @@ namespace vslam
     }
 
     // Callback only enqueues; selection runs on KeyframeSelect worker thread.
-    kf_select->feedImage(timestamp, image, cam_id);
+    kf_select->feedImage(timestamp, image, cam_id, image_right);
   }
 
   void RosWrapper::publishKeyframeDebug(const Keyframe &kf)
@@ -230,6 +246,45 @@ namespace vslam
       const std::string encoding = (kf.image.channels() == 1) ? "mono8" : "bgr8";
       pub_kf_image_->publish(*cv_bridge::CvImage(header, encoding, kf.image).toImageMsg());
     }
+  }
+
+  void RosWrapper::publishDenseCloud(const DenseCloud &cloud)
+  {
+    if (!pub_dense_cloud_ || cloud.xyz.empty())
+    {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(dense_cloud_mutex_);
+      last_dense_cloud_ = cloud;
+    }
+    sensor_msgs::msg::PointCloud2 msg;
+    msg.header.frame_id = "global";
+    msg.header.stamp = node_->now();
+    msg.height = 1;
+    msg.width = static_cast<uint32_t>(cloud.xyz.size());
+    msg.is_dense = true;
+    sensor_msgs::PointCloud2Modifier modifier(msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+    modifier.resize(cloud.xyz.size());
+    sensor_msgs::PointCloud2Iterator<float> x(msg, "x"), y(msg, "y"), z(msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint32_t> rgb(msg, "rgb");
+    for (size_t i = 0; i < cloud.xyz.size(); ++i)
+    {
+      *x = cloud.xyz[i].x();
+      *y = cloud.xyz[i].y();
+      *z = cloud.xyz[i].z();
+      const size_t c = i * 3;
+      const uint8_t r = c + 2 < cloud.rgb.size() ? cloud.rgb[c] : 180;
+      const uint8_t g = c + 2 < cloud.rgb.size() ? cloud.rgb[c + 1] : 180;
+      const uint8_t b = c + 2 < cloud.rgb.size() ? cloud.rgb[c + 2] : 180;
+      *rgb = (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
+      ++x;
+      ++y;
+      ++z;
+      ++rgb;
+    }
+    pub_dense_cloud_->publish(msg);
   }
 
   void RosWrapper::publishMapVisualization(const MapVisualizationSnapshot &snapshot)
@@ -477,7 +532,8 @@ namespace vslam
       message.masks.push_back(cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1));
     }
 
-    feedKeyframeImage(message.timestamp, message.images.front(), cam_id0);
+    feedKeyframeImage(message.timestamp, message.images.front(), cam_id0,
+                      message.images.size() > 1 ? message.images[1] : cv::Mat());
     viz_->handleCameraMeasurement(message);
   }
 

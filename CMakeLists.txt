@@ -210,6 +210,12 @@ include_directories(
   ${Boost_INCLUDE_DIRS}
 )
 
+find_package(CUDAToolkit REQUIRED)
+find_library(VSLAM_NVINFER nvinfer)
+if(NOT VSLAM_NVINFER)
+  message(FATAL_ERROR "libnvinfer not found; TensorRT is required for dense mapping")
+endif()
+
 add_executable(vslam_node
   app/application.cpp
   ${VSLAM_ROS_WRAPPER_SRC}
@@ -219,6 +225,9 @@ add_executable(vslam_node
   map_manager/map_manager.cpp
   map_manager/colmap_options.cpp
   utility/math_utils.cpp
+  dense_mapper/stereo_rectifier.cpp
+  dense_mapper/s2m2_engine.cpp
+  dense_mapper/dense_mapper.cpp
 )
 
 if(VSLAM_ROS_VERSION EQUAL 1)
@@ -230,6 +239,8 @@ target_link_libraries(vslam_node
   colmap
   ${OpenCV_LIBRARIES}
   ${Boost_LIBRARIES}
+  CUDA::cudart
+  ${VSLAM_NVINFER}
 )
 # Keep vslam_mixvpr against --as-needed (online_sfm needs MixVPR symbols).
 # vslam_mixvpr is static: it must follow colmap_online_sfm on the link line, otherwise the

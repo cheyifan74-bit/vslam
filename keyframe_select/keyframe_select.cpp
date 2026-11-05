@@ -59,7 +59,8 @@ namespace vslam
     worker_condition_.notify_one();
   }
 
-  void KeyframeSelect::feedImage(double timestamp, const cv::Mat &image, int cam_id)
+  void KeyframeSelect::feedImage(double timestamp, const cv::Mat &image, int cam_id,
+                                 const cv::Mat &image_right)
   {
     if (cam_id != 0 || image.empty() || stop_worker_)
     {
@@ -69,6 +70,10 @@ namespace vslam
     StampedImage stamped;
     stamped.timestamp = timestamp;
     stamped.image = image.clone();
+    if (!image_right.empty())
+    {
+      stamped.image_right = image_right.clone();
+    }
     stamped.cam_id = cam_id;
 
     {
@@ -188,6 +193,7 @@ namespace vslam
     {
       return;
     }
+    kf.image_right = image.image_right;
 
     PRINT_INFO("[KF_SELECT]: Selected keyframe id=%llu t=%.6f\n", static_cast<unsigned long long>(kf.id),
                kf.timestamp);

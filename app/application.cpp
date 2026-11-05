@@ -159,6 +159,15 @@ namespace vslam
         cp.k3 = distortion[2];
         cp.k4 = distortion[3];
       }
+      Eigen::Matrix4d T_cam_imu = Eigen::Matrix4d::Identity();
+      parser->parse_external("relative_config_imucam", cam_name, "T_cam_imu", T_cam_imu, false);
+      for (int r = 0; r < 4; ++r)
+      {
+        for (int c = 0; c < 4; ++c)
+        {
+          cp.T_cam_imu[r * 4 + c] = T_cam_imu(r, c);
+        }
+      }
 
       cameras.push_back(cp);
     }
@@ -182,6 +191,26 @@ namespace vslam
     parser->parse_config("map_resume_existing", map_cfg.map.resume_existing, false);
     parser->parse_config("map_save_images", map_cfg.map.save_images, false);
     parser->parse_config("map_image_extension", map_cfg.map.image_extension, false);
+
+    parser->parse_config("dense_enabled", map_cfg.dense.enabled, false);
+    parser->parse_config("dense_engine_path", map_cfg.dense.engine_path, false);
+    parser->parse_config("dense_rect_width", map_cfg.dense.rect_width, false);
+    parser->parse_config("dense_rect_height", map_cfg.dense.rect_height, false);
+    parser->parse_config("dense_voxel_m", map_cfg.dense.voxel_m, false);
+    parser->parse_config("dense_truncation_m", map_cfg.dense.truncation_m, false);
+    parser->parse_config("dense_min_range_m", map_cfg.dense.min_range_m, false);
+    parser->parse_config("dense_max_range_m", map_cfg.dense.max_range_m, false);
+    parser->parse_config("dense_min_confidence", map_cfg.dense.min_confidence, false);
+    parser->parse_config("dense_min_visible", map_cfg.dense.min_visible, false);
+    parser->parse_config("dense_weight_reference_range_m", map_cfg.dense.weight_reference_range_m, false);
+    parser->parse_config("dense_saturate_gray", map_cfg.dense.saturate_gray, false);
+    parser->parse_config("dense_sparse_depth_ratio", map_cfg.dense.sparse_depth_ratio, false);
+    parser->parse_config("dense_sparse_depth_margin_m", map_cfg.dense.sparse_depth_margin_m, false);
+    parser->parse_config("dense_sparse_dilate_px", map_cfg.dense.sparse_dilate_px, false);
+    parser->parse_config("dense_verify_frames", map_cfg.dense.verify_frames, false);
+    parser->parse_config("dense_verify_min_baseline_m", map_cfg.dense.verify_min_baseline_m, false);
+    parser->parse_config("dense_verify_agree_m", map_cfg.dense.verify_agree_m, false);
+    parser->parse_config("dense_verify_gap_m", map_cfg.dense.verify_gap_m, false);
 
     parser->parse_config("sift_use_gpu", map_cfg.sift.use_gpu, false);
     parser->parse_config("sift_gpu_index", map_cfg.sift.gpu_index, false);
@@ -240,6 +269,8 @@ namespace vslam
                         map_cfg.mapper.filter_max_reproj_error, false);
     parser->parse_config("mapper_filter_min_tri_angle",
                         map_cfg.mapper.filter_min_tri_angle, false);
+    parser->parse_config("mapper_filter_two_view_min_tri_angle",
+                        map_cfg.mapper.filter_two_view_min_tri_angle, false);
     parser->parse_config("mapper_tri_max_transitivity",
                         map_cfg.mapper.tri_max_transitivity, false);
     parser->parse_config("mapper_tri_create_max_angle_error",

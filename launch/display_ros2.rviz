@@ -323,6 +323,25 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz_default_plugins/PointCloud2
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Name: VSLAM Dense Map
+      Position Transformer: XYZ
+      Queue Size: 2
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.02
+      Style: Flat Squares
+      Topic: /ov_msckf/dense_cloud
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Marker Topic: /ov_msckf/map_visualization

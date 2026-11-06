@@ -134,10 +134,10 @@ mapper_cull_redundant_ratio: 0.9           # cull when this share of its 3D poin
 mapper_cull_min_other_observers: 3         # ... by at least this many other KFs
 mapper_cull_max_scale_ratio: 1.2           # ... from no farther than this x its own viewing distance
 mapper_cull_min_num_points: 30             # weaker frames carry the VIO chain, never culled
-mapper_cull_protect_recent: 5              # newest N registered KFs are never culled
-mapper_cull_max_neighbor_distance_m: 3.0   # VIO-chain neighbours left around a culled KF must stay this close
-mapper_cull_max_neighbor_angle_deg: 45.0
-mapper_cull_max_per_frame: 1
+mapper_cull_protect_recent: 5              # newest N; protected only while length-2 tracks stay common
+mapper_cull_protect_short_track_ratio: 0.10  # protect a recent KF when this share of its tracks has length 2
+mapper_cull_max_parallax_fail_ratio: 0.10  # keep the KF when removing it would break the angle of more points
+mapper_cull_max_per_frame: 3
 mapper_cull_prior_session: true           # also cull KFs loaded from a previous session
 # Keyframe insertion check: a frame localized next to an existing keyframe whose
 # points are already covered by the map is dropped (only updates point stats)
@@ -145,6 +145,8 @@ mapper_insert_check_enabled: true
 mapper_insert_redundant_ratio: 0.75        # share of tracked points already seen by >= 3 other KFs
 mapper_insert_ref_tracked_ratio: 0.9       # drop when tracked >= this x the reference KF's 3D points (ORB-SLAM)
 mapper_insert_min_tracked: 40              # fewer tracked 3D points always inserts
+mapper_insert_min_unmatched_ratio: 0.35    # PnP: keep when this share of features has no 3D point
+mapper_insert_min_short_track_ratio: 0.20  # PnP: keep when this share of tracks has length <= 2
 mapper_insert_max_kf_distance_m: 1.0       # reference KF this close, sharing >= half the tracked points
 mapper_insert_max_kf_angle_deg: 30.0
 mapper_insert_max_consecutive_skips: 10    # then force a keyframe (and a loop query)
@@ -153,13 +155,21 @@ mapper_point_stats_enabled: true
 mapper_stale_min_visible: 15               # checks (keypoint near the projection) before a point can be judged
 mapper_stale_max_found_ratio: 0.25         # remove points matched in fewer than this share of checks
 mapper_stale_session_decay: 0.5            # scale of the previous sessions' counts on resume
-mapper_stale_prior_session_only: true      # judge only points no KF of this session observes
-# Spatial capacity: at most N KFs per voxel x viewing-yaw bin, lowest score evicted
+mapper_stale_prior_session_only: false     # false: points of this session are judged too
+mapper_stale_max_consecutive_misses: 3     # remove a point missed by this many checks in a row; <=0 disables
+mapper_stale_spatial_max_distance_m: 3.0   # also check points of KFs this close, shared points or not
+mapper_stale_spatial_max_angle_deg: 60.0   # ... with optical axes within this angle
+mapper_stale_spatial_num_images: 15        # ... nearest N such KFs
+mapper_stale_max_consecutive_unseen: 5     # remove a point projected in view with no keypoint near it this many times in a row
+mapper_stale_frame_min_points: 20          # drop a KF that lost points to stale removal once fewer remain
+mapper_stale_frame_max_lost_ratio: 0.7     # ... or once this share of its points is gone
+# Spatial capacity: at most N KFs per voxel and optical-axis direction
 mapper_capacity_enabled: true
 mapper_capacity_voxel_m: 1.0
-mapper_capacity_yaw_bins: 4
+mapper_capacity_view_angle_deg: 25.0       # same direction when the optical axes differ by less than this
+mapper_capacity_boundary_m: 0.2            # within this of a voxel face, also compete with the neighbor voxel
 mapper_capacity_max_per_cell: 2
-mapper_capacity_replace_ratio: 0.5         # replace an old KF only if it scores below this x the new one, else drop the new
+mapper_capacity_replace_ratio: 0.8         # replace an old KF only if it scores below this x the new one, else drop the new
 mapper_capacity_min_session_frames: 20     # KFs mapped this session before previous-session KFs can be replaced
 # Delete culled / dropped keyframes from database.db and images/ on exit
 map_compact_database_on_exit: true

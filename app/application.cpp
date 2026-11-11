@@ -211,6 +211,21 @@ namespace vslam
     parser->parse_config("dense_verify_min_baseline_m", map_cfg.dense.verify_min_baseline_m, false);
     parser->parse_config("dense_verify_agree_m", map_cfg.dense.verify_agree_m, false);
     parser->parse_config("dense_verify_gap_m", map_cfg.dense.verify_gap_m, false);
+    parser->parse_config("dense_integrate_delay_frames", map_cfg.dense.integrate_delay_frames, false);
+    parser->parse_config("dense_pose_track_frames", map_cfg.dense.pose_track_frames, false);
+    parser->parse_config("dense_pose_update_trans_m", map_cfg.dense.pose_update_trans_m, false);
+    parser->parse_config("dense_pose_update_rot_deg", map_cfg.dense.pose_update_rot_deg, false);
+    parser->parse_config("dense_idle_flush_s", map_cfg.dense.idle_flush_s, false);
+    parser->parse_config("dense_carve_free_space", map_cfg.dense.carve_free_space, false);
+    parser->parse_config("dense_carve_weight", map_cfg.dense.carve_weight, false);
+    parser->parse_config("dense_surface_min_weight", map_cfg.dense.surface_min_weight, false);
+    parser->parse_config("dense_edge_ratio", map_cfg.dense.edge_ratio, false);
+    parser->parse_config("dense_replay_max_defer_jobs", map_cfg.dense.replay_max_defer_jobs, false);
+    parser->parse_config("dense_rebuild_redundant_removals", map_cfg.dense.rebuild_redundant_removals, false);
+    parser->parse_config("dense_resident_frames", map_cfg.dense.resident_frames, false);
+    parser->parse_config("dense_publish_period_s", map_cfg.dense.publish_period_s, false);
+    parser->parse_config("dense_submap_max_frames", map_cfg.dense.submap_max_frames, false);
+    parser->parse_config("dense_submap_max_distance_m", map_cfg.dense.submap_max_distance_m, false);
 
     parser->parse_config("sift_use_gpu", map_cfg.sift.use_gpu, false);
     parser->parse_config("sift_gpu_index", map_cfg.sift.gpu_index, false);

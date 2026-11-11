@@ -247,3 +247,22 @@ dense_verify_frames: 8
 dense_verify_min_baseline_m: 0.3
 dense_verify_agree_m: 0.15
 dense_verify_gap_m: 0.4
+# Fuse a keyframe only after this many newer ones: local BA has refined its pose
+# and later frames can verify it. Poses of the newest N keyframes are refreshed
+# every keyframe; a fused frame that moved past the thresholds is re-fused.
+dense_integrate_delay_frames: 5
+dense_pose_track_frames: 30
+dense_pose_update_trans_m: 0.01
+dense_pose_update_rot_deg: 0.3
+dense_idle_flush_s: 2.0          # no keyframe for this long: fuse the delayed frames anyway
+dense_carve_free_space: true     # voxels in front of an observed surface move towards free space
+dense_carve_weight: 0.5
+dense_surface_min_weight: 0.5    # voxels below this weight are not extracted
+dense_edge_ratio: 0.08           # drop pixels whose 4-neighbour depth jumps by this share; 0 disables
+dense_replay_max_defer_jobs: 5   # batch block rebuilds over at most this many keyframes
+dense_rebuild_redundant_removals: false  # culled / capacity-evicted keyframes keep their depth in the volume
+dense_resident_frames: 30        # depth of only the newest N fused keyframes stays in RAM; <=0 keeps all
+dense_publish_period_s: 1.0
+dense_submap_max_frames: 40       # keyframes per TSDF submap; a loop moves submaps rigidly, <=0: one volume
+dense_submap_max_distance_m: 4.0  # a keyframe farther than this from the submap anchor starts a new submap
+dense_full_cloud_period_s: 5.0    # full /dense_cloud rebuild period; /dense_submaps is incremental

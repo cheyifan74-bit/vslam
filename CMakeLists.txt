@@ -242,6 +242,10 @@ target_link_libraries(vslam_node
   CUDA::cudart
   ${VSLAM_NVINFER}
 )
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(vslam_node OpenMP::OpenMP_CXX)
+endif()
 # Keep vslam_mixvpr against --as-needed (online_sfm needs MixVPR symbols).
 # vslam_mixvpr is static: it must follow colmap_online_sfm on the link line, otherwise the
 # linker has nothing unresolved yet when it scans the archive and drops it.

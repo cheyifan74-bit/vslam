@@ -330,8 +330,8 @@ Visualization Manager:
       Class: rviz_default_plugins/PointCloud2
       Color Transformer: RGB8
       Decay Time: 0
-      Enabled: true
-      Name: VSLAM Dense Map
+      Enabled: false
+      Name: VSLAM Dense Map (full)
       Position Transformer: XYZ
       Queue Size: 2
       Selectable: true
@@ -341,6 +341,14 @@ Visualization Manager:
       Topic: /ov_msckf/dense_cloud
       Unreliable: false
       Use Fixed Frame: true
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic: /ov_msckf/dense_submaps
+      Name: VSLAM Dense Submaps
+      Namespaces:
+        dense_submaps: true
+      Queue Size: 100
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true

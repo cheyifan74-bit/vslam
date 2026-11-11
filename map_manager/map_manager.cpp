@@ -337,17 +337,35 @@ namespace vslam
     bool processed = false;
     colmap::MappingFrameResult mapping_result;
     std::vector<Eigen::Vector3f> sparse_xyz;
+    std::vector<std::pair<uint32_t, colmap::MappingPose>> dense_poses;
     {
       std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
       processed = mapper->Process(image_id, abs_path, vio_prior, &mapping_result);
       last_processed_image_id_ = image_id;
-      if (dense_mapper_ && mapping_result.registered)
+      if (dense_mapper_)
       {
-        const auto &points = mapper->GetReconstruction().Points3D();
-        sparse_xyz.reserve(points.size());
-        for (const auto &point : points)
+        const colmap::Reconstruction &reconstruction = mapper->GetReconstruction();
+        if (mapping_result.registered && reconstruction.ExistsImage(image_id))
         {
-          sparse_xyz.emplace_back(point.second.xyz.cast<float>());
+          for (const auto &point2D : reconstruction.Image(image_id).Points2D())
+          {
+            if (point2D.HasPoint3D() && reconstruction.ExistsPoint3D(point2D.point3D_id))
+            {
+              sparse_xyz.emplace_back(
+                  reconstruction.Point3D(point2D.point3D_id).xyz.cast<float>());
+            }
+          }
+        }
+        // Loop corrections plus the latest poses of recent keyframes, which
+        // local BA keeps refining after they were submitted.
+        dense_poses.assign(mapping_result.dirty_poses.begin(), mapping_result.dirty_poses.end());
+        for (const uint32_t id : dense_mapper_->trackedIds())
+        {
+          if (reconstruction.ExistsImage(id) && reconstruction.Image(id).HasPose())
+          {
+            dense_poses.emplace_back(
+                id, colmap::PoseFromRigid3d(reconstruction.Image(id).CamFromWorld()));
+          }
         }
       }
     }
@@ -355,7 +373,8 @@ namespace vslam
     {
       dense_mapper_->submit(image_id, mapping_result.registered, keyframe.image,
                             keyframe.image_right, mapping_result.cam_from_world,
-                            mapping_result.removed_ids, mapping_result.dirty_poses, sparse_xyz);
+                            mapping_result.removed_ids, mapping_result.redundant_ids,
+                            dense_poses, sparse_xyz);
     }
     if (!processed)
     {

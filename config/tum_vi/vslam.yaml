@@ -11,7 +11,7 @@
 # ------------------------------------------------------------------
 
 # Selection thresholds
-kf_dist_thresh: 1.0          # meters; select if translation from last KF exceeds this
+kf_dist_thresh: 0.5          # meters; select if translation from last KF exceeds this
 kf_angle_thresh_deg: 15.0    # degrees; select if rotation from last KF exceeds this
 
 # Image-pose timestamp sync
@@ -124,6 +124,10 @@ mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step len
 mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
 mapper_ba_fixed_min_points: 30          # LBA gauge = oldest window KF with >= this many 3D points; 0 = oldest
 mapper_ba_loop_max_num_iterations: 50      # loop BA over the corrected chain (local BA uses 10)
+mapper_ba_loop_pose_prior_rot_sigma_deg: 2.0   # loop BA: chain frames tied to their pose-graph pose; <=0 disables
+mapper_ba_loop_pose_prior_trans_sigma_m: 0.05
+mapper_ba_loop_min_point_track_length: 3       # loop BA: shorter tracks held constant; <=0 disables
+mapper_ba_loop_min_point_tri_angle_deg: 2.0    # loop BA: points below this max tri angle held constant; <=0 disables
 # Local BA window padding when covisibility is weak (e.g. VIO-fallback frames)
 mapper_ba_min_window_images: 4             # pad windows smaller than this; <=0 disables
 mapper_ba_temporal_window_images: 5        # at most this many recent registered KFs added
@@ -160,8 +164,8 @@ mapper_stale_max_consecutive_misses: 3     # remove a point missed by this many 
 mapper_stale_spatial_max_distance_m: 3.0   # also check points of KFs this close, shared points or not
 mapper_stale_spatial_max_angle_deg: 60.0   # ... with optical axes within this angle
 mapper_stale_spatial_num_images: 15        # ... nearest N such KFs
-mapper_stale_max_consecutive_unseen: 5     # remove a point projected in view with no keypoint near it this many times in a row
-mapper_stale_frame_min_points: 20          # drop a KF that lost points to stale removal once fewer remain
+mapper_stale_max_consecutive_unseen: 4     # remove a point projected in view with no keypoint near it this many times in a row
+mapper_stale_frame_min_points: 10          # drop a KF that lost points to stale removal once fewer remain
 mapper_stale_frame_max_lost_ratio: 0.7     # ... or once this share of its points is gone
 # Spatial capacity: at most N KFs per voxel and optical-axis direction
 mapper_capacity_enabled: true

@@ -98,6 +98,13 @@ namespace vslam
     options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
     options.ba_fixed_min_points = cfg.ba_fixed_min_points;
     options.ba_loop_max_num_iterations = cfg.ba_loop_max_num_iterations;
+    options.ba_loop_pose_prior_rot_sigma_deg =
+        cfg.ba_loop_pose_prior_rot_sigma_deg;
+    options.ba_loop_pose_prior_trans_sigma_m =
+        cfg.ba_loop_pose_prior_trans_sigma_m;
+    options.ba_loop_min_point_track_length = cfg.ba_loop_min_point_track_length;
+    options.ba_loop_min_point_tri_angle_deg =
+        cfg.ba_loop_min_point_tri_angle_deg;
     options.ba_min_window_images = cfg.ba_min_window_images;
     options.ba_temporal_window_images = cfg.ba_temporal_window_images;
     options.sparse_write_every_n = cfg.sparse_write_every_n;

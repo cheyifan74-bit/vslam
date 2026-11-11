@@ -332,6 +332,14 @@ namespace vslam
                         map_cfg.mapper.ba_fixed_min_points, false);
     parser->parse_config("mapper_ba_loop_max_num_iterations",
                         map_cfg.mapper.ba_loop_max_num_iterations, false);
+    parser->parse_config("mapper_ba_loop_pose_prior_rot_sigma_deg",
+                        map_cfg.mapper.ba_loop_pose_prior_rot_sigma_deg, false);
+    parser->parse_config("mapper_ba_loop_pose_prior_trans_sigma_m",
+                        map_cfg.mapper.ba_loop_pose_prior_trans_sigma_m, false);
+    parser->parse_config("mapper_ba_loop_min_point_track_length",
+                        map_cfg.mapper.ba_loop_min_point_track_length, false);
+    parser->parse_config("mapper_ba_loop_min_point_tri_angle_deg",
+                        map_cfg.mapper.ba_loop_min_point_tri_angle_deg, false);
     parser->parse_config("mapper_ba_min_window_images",
                         map_cfg.mapper.ba_min_window_images, false);
     parser->parse_config("mapper_ba_temporal_window_images",

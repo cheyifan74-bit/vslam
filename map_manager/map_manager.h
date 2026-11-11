@@ -131,6 +131,10 @@ namespace vslam
     int ba_vio_prior_max_gap = 5;
     int ba_fixed_min_points = 0;
     int ba_loop_max_num_iterations = 50;
+    double ba_loop_pose_prior_rot_sigma_deg = 2.0;
+    double ba_loop_pose_prior_trans_sigma_m = 0.05;
+    int ba_loop_min_point_track_length = 3;
+    double ba_loop_min_point_tri_angle_deg = 2.0;
     int ba_min_window_images = 4;
     int ba_temporal_window_images = 5;
     int sparse_write_every_n = 10;

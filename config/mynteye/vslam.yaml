@@ -124,6 +124,10 @@ mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step len
 mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
 mapper_ba_fixed_min_points: 30          # LBA gauge = oldest window KF with >= this many 3D points; 0 = oldest
 mapper_ba_loop_max_num_iterations: 50      # loop BA over the corrected chain (local BA uses 10)
+mapper_ba_loop_pose_prior_rot_sigma_deg: 2.0   # loop BA: chain frames tied to their pose-graph pose; <=0 disables
+mapper_ba_loop_pose_prior_trans_sigma_m: 0.05
+mapper_ba_loop_min_point_track_length: 3       # loop BA: shorter tracks held constant; <=0 disables
+mapper_ba_loop_min_point_tri_angle_deg: 2.0    # loop BA: points below this max tri angle held constant; <=0 disables
 # Local BA window padding when covisibility is weak (e.g. VIO-fallback frames)
 mapper_ba_min_window_images: 4             # pad windows smaller than this; <=0 disables
 mapper_ba_temporal_window_images: 5        # at most this many recent registered KFs added

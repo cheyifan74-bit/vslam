@@ -159,7 +159,7 @@ mapper_point_stats_enabled: true
 mapper_stale_min_visible: 15               # checks (keypoint near the projection) before a point can be judged
 mapper_stale_max_found_ratio: 0.25         # remove points matched in fewer than this share of checks
 mapper_stale_session_decay: 0.5            # scale of the previous sessions' counts on resume
-mapper_stale_prior_session_only: false     # false: points of this session are judged too
+mapper_stale_prior_session_only: false     # false = points of this session are judged too
 mapper_stale_max_consecutive_misses: 3     # remove a point missed by this many checks in a row; <=0 disables
 mapper_stale_spatial_max_distance_m: 3.0   # also check points of KFs this close, shared points or not
 mapper_stale_spatial_max_angle_deg: 90.0   # ... with optical axes within this angle

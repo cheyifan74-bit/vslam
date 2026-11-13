@@ -209,22 +209,16 @@ dense_saturate_gray: 0.0
 dense_sparse_depth_ratio: 1.25
 dense_sparse_depth_margin_m: 0.4
 dense_sparse_dilate_px: 12
-# A pixel enters the volume only when an earlier keyframe agrees and none
-# sees through it. Raw depth is still stored. 0 fuses every pixel.
-dense_verify_frames: 8
-dense_verify_min_baseline_m: 0.3
-dense_verify_agree_m: 0.15
-dense_verify_gap_m: 0.4
-# Fuse a keyframe only after this many newer ones: local BA has refined its pose
-# and later frames can verify it. Poses of the newest N keyframes are refreshed
+# Fuse a keyframe only after this many newer ones, so local BA has refined its
+# pose. Poses of the newest N keyframes are refreshed
 # every keyframe; a fused frame that moved past the thresholds is re-fused.
-dense_integrate_delay_frames: 5
+dense_integrate_delay_frames: 1
 dense_pose_track_frames: 30
 dense_pose_update_trans_m: 0.01
 dense_pose_update_rot_deg: 0.3
 dense_idle_flush_s: 2.0          # no keyframe for this long: fuse the delayed frames anyway
-dense_carve_free_space: true     # voxels in front of an observed surface move towards free space
-dense_carve_weight: 0.5
+dense_carve_free_space: true     # voxels in front of an observed surface, outside the truncation band, lose weight
+dense_carve_weight: 1.0          # fraction of the max voxel weight removed by one view; 1 clears a surface in one pass
 dense_surface_min_weight: 0.5    # voxels below this weight are not extracted
 dense_edge_ratio: 0.08           # drop pixels whose 4-neighbour depth jumps by this share; 0 disables
 dense_replay_max_defer_jobs: 5   # batch block rebuilds over at most this many keyframes

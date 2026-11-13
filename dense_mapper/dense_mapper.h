@@ -43,19 +43,8 @@ struct DenseConfig
   /// How far the sparse ceiling spreads, in rectified pixels. Keeps the halo
   /// small so a near ladder does not erase the wall behind it.
   int sparse_dilate_px = 12;
-  /// How many earlier keyframes to test before a depth pixel may enter the
-  /// volume. <=0 fuses every pixel.
-  int verify_frames = 8;
-  /// Ignore reference frames closer than this. The two views must actually move.
-  double verify_min_baseline_m = 0.3;
-  /// A reference depth within this distance of the pixel confirms it.
-  /// A confirmed pixel is not written when another extractable surface already
-  /// lies on the same ray, outside the truncation band but inside this distance.
-  double verify_agree_m = 0.15;
-  /// A reference depth farther than the pixel by this much sees through it.
-  double verify_gap_m = 0.4;
   /// A depth frame is fused only after this many newer keyframes, so local BA
-  /// has refined its pose and later frames can verify it. 0 fuses at once.
+  /// has refined its pose. 0 fuses at once.
   int integrate_delay_frames = 5;
   /// Poses of the newest N submitted keyframes are refreshed on every keyframe.
   int pose_track_frames = 30;
@@ -64,10 +53,11 @@ struct DenseConfig
   double pose_update_rot_deg = 0.3;
   /// With no keyframe for this long, delayed frames are fused anyway. <=0 never.
   double idle_flush_s = 2.0;
-  /// Voxels in front of an observed surface are pushed towards free space.
+  /// Voxels in front of an observed surface, outside the truncation band, lose weight.
   bool carve_free_space = true;
-  /// Weight scale of a free-space update relative to a surface update.
-  double carve_weight = 0.5;
+  /// Fraction of the maximum voxel weight removed by one such observation.
+  /// 1 clears a saturated surface in a single view.
+  double carve_weight = 1.0;
   /// Voxels below this weight are neither extracted nor treated as surface.
   double surface_min_weight = 0.5;
   /// Drop a depth pixel when a 4-neighbour differs by more than this share of

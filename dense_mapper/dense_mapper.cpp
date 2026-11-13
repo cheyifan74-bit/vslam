@@ -101,12 +101,15 @@ using BlockSet = std::unordered_set<BlockKey, BlockKeyHash>;
 
 int VoxelIndex(int ix, int iy, int iz) { return ix + kBlockN * (iy + kBlockN * iz); }
 
-/// 6 bytes: sdf in [-1, 1] and weight in [0, 65.5] as 16-bit fixed point.
+/// sdf in [-1, 1] and weight in [0, 65.5] as 16-bit fixed point.
+/// last_id is the newest keyframe that wrote or cleared this voxel. An older
+/// frame cannot put its depth back on top of that.
 struct Voxel
 {
   int16_t sdf_q = static_cast<int16_t>(kSdfScale);
   uint16_t weight_q = 0;
   uint8_t gray = 0;
+  uint32_t last_id = 0;
 
   float sdf() const { return static_cast<float>(sdf_q) / kSdfScale; }
   float weight() const { return static_cast<float>(weight_q) / kWeightScale; }
@@ -117,7 +120,6 @@ struct Voxel
         std::min(std::lround(std::max(weight_value, 0.f) * kWeightScale), 65535L));
   }
 };
-static_assert(sizeof(Voxel) == 6, "Voxel layout");
 static_assert(kMaxWeight * kWeightScale <= 65535.f, "weight range");
 
 struct DepthFrame
@@ -138,8 +140,7 @@ struct DepthFrame
   std::vector<uint8_t> gray;
   /// False while the frame waits for integrate_delay_frames newer keyframes.
   bool integrated = false;
-  /// The multi-view check already ran: rejected pixels carry conf 0, so the
-  /// frame can be re-fused without its reference frames being in memory.
+  /// Kept for the depth-file flag. Fusion no longer consults other frames.
   bool verified = false;
   uint32_t submap = 0;
   /// cam_from_submap the frame was last fused with.
@@ -370,206 +371,140 @@ struct DenseMapper::Impl
                                      : &it->second[static_cast<size_t>(VoxelIndex(ix, iy, iz))];
   }
 
-  const Voxel *FindVoxel(const Submap &submap, const Eigen::Vector3d &point) const
-  {
-    const BlockKey key = KeyOf(point);
-    const auto it = submap.blocks.find(key);
-    if (it == submap.blocks.end())
-    {
-      return nullptr;
-    }
-    const Eigen::Vector3d local = (point - BlockOrigin(key)) / voxel;
-    const int ix = std::clamp(static_cast<int>(std::floor(local.x())), 0, kBlockN - 1);
-    const int iy = std::clamp(static_cast<int>(std::floor(local.y())), 0, kBlockN - 1);
-    const int iz = std::clamp(static_cast<int>(std::floor(local.z())), 0, kBlockN - 1);
-    return &it->second[static_cast<size_t>(VoxelIndex(ix, iy, iz))];
-  }
 
-  // True when this ray already hits an extractable surface outside the band
-  // this sample will write, but still within verify_agree_m. The stored sdf
-  // points at that surface, so the shell of a surface inside the truncation
-  // band does not count and later views can still accumulate weight.
-  // center / dir are in the submap frame.
-  bool AnotherLayerOnRay(const Submap &submap, const Eigen::Vector3d &center,
-                         const Eigen::Vector3d &dir, double length) const
+  /// Zeros existing voxels that sit on this frame's rays, in front of its depth
+  /// by more than the truncation distance. other submaps included: a revisit
+  /// often lands in a different submap from the keyframe that first saw the object.
+  void CarveInFront(const DepthFrame &frame, Submap &other)
   {
-    const double agree = config.verify_agree_m;
-    if (agree <= trunc)
+    const Rigid cam_from = frame.Pose() * other.world_from_submap;
+    const Eigen::Matrix3d R = cam_from.q.toRotationMatrix();
+    const Eigen::Matrix3d Rt = R.transpose();
+    const Eigen::Vector3d t = cam_from.t;
+    const Eigen::Vector3d center = -Rt * t;
+    const double near = std::max(config.min_range_m, 0.05);
+    const double step = std::min(trunc, BlockSize() * 0.5);
+    const float trunc_f = static_cast<float>(trunc);
+    const float carve_scale = static_cast<float>(config.carve_weight);
+    BlockSet keys;
+    for (int y = 0; y < frame.height; ++y)
     {
-      return false;
-    }
-    const float min_weight = static_cast<float>(config.surface_min_weight);
-    const double step = voxel;
-    auto band = [&](double begin, double end) {
-      for (double s = begin; s <= end; s += step)
+      for (int x = 0; x < frame.width; ++x)
       {
-        if (s <= 0.0)
+        const size_t idx = static_cast<size_t>(y) * frame.width + x;
+        if (frame.depth_mm[idx] == 0)
         {
           continue;
         }
-        const Voxel *cell = FindVoxel(submap, center + dir * s);
-        if (cell == nullptr || cell->weight() < min_weight || std::abs(cell->sdf()) > 0.25f)
+        const double depth = frame.depth_mm[idx] * 0.001;
+        const Eigen::Vector3d dir =
+            (Rt * Eigen::Vector3d((x - frame.cx) * depth / frame.fx,
+                                  (y - frame.cy) * depth / frame.fy, depth))
+                .normalized();
+        const double length = depth * std::sqrt(
+            std::pow((x - frame.cx) / frame.fx, 2) +
+            std::pow((y - frame.cy) / frame.fy, 2) + 1.0);
+        for (double s = near; s < length - trunc; s += step)
         {
-          continue;
-        }
-        const double crossed = s + static_cast<double>(cell->sdf()) * trunc;
-        const double gap = std::abs(crossed - length);
-        if (gap > trunc && gap <= agree)
-        {
-          return true;
+          const BlockKey key = KeyOf(center + dir * s);
+          if (other.blocks.find(key) != other.blocks.end())
+          {
+            keys.insert(key);
+          }
         }
       }
-      return false;
-    };
-    return band(length - agree, length - trunc) || band(length + trunc, length + agree);
-  }
-
-  struct VerifyRef
-  {
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
-    Eigen::Vector3d t = Eigen::Vector3d::Zero();
-    double fx = 0;
-    double fy = 0;
-    double cx = 0;
-    double cy = 0;
-    int width = 0;
-    int height = 0;
-    const uint16_t *depth = nullptr;
-  };
-
-  /// Keyframes before and after this one that see the same scene with enough
-  /// baseline, closest in time first. Overlap is tested with five probe points
-  /// at the median depth. The raw depth images stay on those frames; this only
-  /// decides which pixels may be fused. Works in world coordinates.
-  std::vector<VerifyRef> SelectVerifyRefs(const DepthFrame &frame, const Eigen::Matrix3d &R,
-                                          const Eigen::Vector3d &center) const
-  {
-    std::vector<VerifyRef> refs;
-    if (config.verify_frames <= 0)
-    {
-      return refs;
     }
-    std::vector<uint16_t> samples;
-    for (size_t i = 0; i < frame.depth_mm.size(); i += 61)
+    if (keys.empty())
     {
-      if (frame.depth_mm[i] > 0)
-      {
-        samples.push_back(frame.depth_mm[i]);
-      }
+      return;
     }
-    if (samples.empty())
+    const Eigen::Vector3d step_cam = R.col(0) * voxel;
+    const double min_z = std::max(0.05, config.min_range_m * 0.5);
+    for (const BlockKey &key : keys)
     {
-      return refs;
-    }
-    std::nth_element(samples.begin(), samples.begin() + samples.size() / 2, samples.end());
-    const double median = samples[samples.size() / 2] * 0.001;
-    const double fractions[5][2] = {{0.5, 0.5}, {0.25, 0.25}, {0.75, 0.25}, {0.25, 0.75}, {0.75, 0.75}};
-    std::vector<Eigen::Vector3d> probes;
-    for (const auto &f : fractions)
-    {
-      const double x = f[0] * frame.width;
-      const double y = f[1] * frame.height;
-      const Eigen::Vector3d p_cam((x - frame.cx) * median / frame.fx,
-                                  (y - frame.cy) * median / frame.fy, median);
-      probes.push_back(R.transpose() * (p_cam - frame.t));
-    }
-
-    struct Candidate
-    {
-      uint32_t id = 0;
-      const DepthFrame *frame = nullptr;
-      int overlap = 0;
-    };
-    std::vector<Candidate> candidates;
-    candidates.reserve(frames.size());
-    for (const auto &item : frames)
-    {
-      const DepthFrame &other = item.second;
-      if (item.first == frame.image_id || !other.Resident())
+      const auto it = other.blocks.find(key);
+      if (it == other.blocks.end())
       {
         continue;
       }
-      const Eigen::Matrix3d rotation = other.q.toRotationMatrix();
-      const Eigen::Vector3d other_center = -rotation.transpose() * other.t;
-      if ((other_center - center).norm() < config.verify_min_baseline_m)
+      const Eigen::Vector3d origin = BlockOrigin(key);
+      bool touched = false;
+      for (int iz = 0; iz < kBlockN; ++iz)
       {
-        continue;
-      }
-      int overlap = 0;
-      for (const Eigen::Vector3d &probe : probes)
-      {
-        const Eigen::Vector3d pc = rotation * probe + other.t;
-        if (pc.z() < 0.3)
+        for (int iy = 0; iy < kBlockN; ++iy)
         {
-          continue;
+          const Eigen::Vector3d row(origin.x() + 0.5 * voxel, origin.y() + (iy + 0.5) * voxel,
+                                    origin.z() + (iz + 0.5) * voxel);
+          const Eigen::Vector3d row_cam = R * row + t;
+          for (int ix = 0; ix < kBlockN; ++ix)
+          {
+            const Eigen::Vector3d pc = row_cam + step_cam * static_cast<double>(ix);
+            if (pc.z() < min_z)
+            {
+              continue;
+            }
+            const int u = static_cast<int>(std::lround(frame.fx * pc.x() / pc.z() + frame.cx));
+            const int v = static_cast<int>(std::lround(frame.fy * pc.y() / pc.z() + frame.cy));
+            if (u < 0 || v < 0 || u >= frame.width || v >= frame.height)
+            {
+              continue;
+            }
+            const size_t pidx = static_cast<size_t>(v) * frame.width + u;
+            if (frame.depth_mm[pidx] == 0)
+            {
+              continue;
+            }
+            const double depth = frame.depth_mm[pidx] * 0.001;
+            const double range =
+                depth * std::sqrt(std::pow((u - frame.cx) / frame.fx, 2) +
+                                  std::pow((v - frame.cy) / frame.fy, 2) + 1.0);
+            Voxel &cell = it->second[static_cast<size_t>(VoxelIndex(ix, iy, iz))];
+            if (cell.last_id > frame.image_id || cell.weight() <= 0.f)
+            {
+              continue;
+            }
+            if (static_cast<float>(range) - static_cast<float>(pc.norm()) <= trunc_f)
+            {
+              continue;
+            }
+            float weight = cell.weight() - carve_scale * kMaxWeight;
+            if (weight < static_cast<float>(config.surface_min_weight))
+            {
+              weight = 0.f;
+            }
+            cell.set(1.f, weight);
+            cell.last_id = frame.image_id;
+            touched = true;
+          }
         }
-        const double u = other.fx * pc.x() / pc.z() + other.cx;
-        const double v = other.fy * pc.y() / pc.z() + other.cy;
-        if (u >= 0 && v >= 0 && u < other.width && v < other.height)
-        {
-          ++overlap;
-        }
       }
-      if (overlap < 2)
+      if (touched)
       {
-        continue;
+        other.surface_dirty.insert(key);
       }
-      candidates.push_back({item.first, &other, overlap});
     }
-    const int64_t self = frame.image_id;
-    std::sort(candidates.begin(), candidates.end(), [self](const Candidate &a, const Candidate &b) {
-      const int64_t da = std::abs(static_cast<int64_t>(a.id) - self);
-      const int64_t db = std::abs(static_cast<int64_t>(b.id) - self);
-      if (da != db)
-      {
-        return da < db;
-      }
-      return a.overlap > b.overlap;
-    });
-    if (static_cast<int>(candidates.size()) > config.verify_frames)
-    {
-      candidates.resize(static_cast<size_t>(config.verify_frames));
-    }
-    refs.reserve(candidates.size());
-    for (const Candidate &candidate : candidates)
-    {
-      const DepthFrame &other = *candidate.frame;
-      VerifyRef ref;
-      ref.R = other.q.toRotationMatrix();
-      ref.t = other.t;
-      ref.fx = other.fx;
-      ref.fy = other.fy;
-      ref.cx = other.cx;
-      ref.cy = other.cy;
-      ref.width = other.width;
-      ref.height = other.height;
-      ref.depth = other.depth_mm.data();
-      refs.push_back(ref);
-    }
-    return refs;
   }
 
   /// Projective TSDF update of the frame's submap: every voxel of the candidate
   /// blocks is projected into the frame once. Candidates are the blocks around
-  /// the accepted depth (allocated) plus, for free-space carving, existing
-  /// blocks in the frustum. only != nullptr restricts the update (rebuild).
-  /// The first pass with reference frames stores its verdict in conf (rejected
-  /// pixels become 0) and returns true; the caller must then persist the frame.
-  bool Integrate(DepthFrame *frame, Submap &submap, const BlockSet *only, bool log)
+  /// the depth plus, for free-space carving, existing blocks in the frustum.
+  /// only != nullptr restricts the update (rebuild). current_pose uses the
+  /// frame's pose now, so a replay carves the surface just written by an older
+  /// frame instead of the place that surface used to occupy.
+  bool Integrate(DepthFrame *frame, Submap &submap, const BlockSet *only, bool log,
+                 bool current_pose = false)
   {
     if (frame == nullptr || !frame->Resident())
     {
       return false;
     }
-    // World pose for verification (references live in world), submap pose for
-    // the volume. A partial rebuild keeps the pose the frame's other blocks
-    // were fused with; it drifted less than the rebuild thresholds.
-    const Rigid cam_from_submap =
-        only != nullptr ? frame->fused : frame->Pose() * submap.world_from_submap;
+    // A partial rebuild normally keeps the pose the frame's other blocks were
+    // fused with. A submap replay passes current_pose so every frame, old and
+    // new, is written in the same pose and the newest observation wins.
+    const Rigid cam_from_submap = (only != nullptr && !current_pose)
+                                      ? frame->fused
+                                      : frame->Pose() * submap.world_from_submap;
     frame->fused = cam_from_submap;
-    const Eigen::Matrix3d Rw = frame->q.toRotationMatrix();
-    const Eigen::Vector3d tw = frame->t;
-    const Eigen::Vector3d center_w = -Rw.transpose() * tw;
     const Eigen::Matrix3d R = cam_from_submap.q.toRotationMatrix();
     const Eigen::Matrix3d Rt = R.transpose();
     const Eigen::Vector3d t = cam_from_submap.t;
@@ -580,38 +515,20 @@ struct DenseMapper::Impl
     const double fy = frame->fy;
     const double cx = frame->cx;
     const double cy = frame->cy;
-    const bool frozen = frame->verified;
-    const bool verify = !frozen && config.verify_frames > 0;
-    const std::vector<VerifyRef> refs =
-        verify ? SelectVerifyRefs(*frame, Rw, center_w) : std::vector<VerifyRef>();
-    // Without references every pixel is unconfirmed; keep the frame open so a
-    // later rebuild with neighbours around can still accept them.
-    const bool freeze = !frozen && (!verify || !refs.empty());
-    const double agree = config.verify_agree_m;
-    const double gap = config.verify_gap_m;
-
-    // Range along the pixel ray of every pixel allowed into the volume, 0 otherwise.
+    // Range along the pixel ray. Every pixel with a depth is fused; other
+    // keyframes see a different view, so their depth is not a gate.
     std::vector<float> range(static_cast<size_t>(width) * static_cast<size_t>(height), 0.f);
     int kept = 0;
-    int contradicted = 0;
-    int unconfirmed = 0;
-    int layered = 0;
-#pragma omp parallel for schedule(dynamic, 4) reduction(+ : kept, contradicted, unconfirmed, layered)
+#pragma omp parallel for schedule(dynamic, 4) reduction(+ : kept)
     for (int y = 0; y < height; ++y)
     {
       for (int x = 0; x < width; ++x)
       {
         const size_t idx = static_cast<size_t>(y) * width + x;
-        if (frame->depth_mm[idx] == 0 || (frozen && frame->conf[idx] == 0))
+        if (frame->depth_mm[idx] == 0)
         {
           continue;
         }
-        const auto reject = [&]() {
-          if (freeze)
-          {
-            frame->conf[idx] = 0;
-          }
-        };
         const double depth = static_cast<double>(frame->depth_mm[idx]) * 0.001;
         const Eigen::Vector3d p_cam((x - cx) * depth / fx, (y - cy) * depth / fy, depth);
         const double length = p_cam.norm();
@@ -619,75 +536,16 @@ struct DenseMapper::Impl
         {
           continue;
         }
-        if (verify)
-        {
-          const Eigen::Vector3d p_world = Rw.transpose() * (p_cam - tw);
-          bool support = false;
-          bool contra = false;
-          for (const VerifyRef &ref : refs)
-          {
-            const Eigen::Vector3d pc = ref.R * p_world + ref.t;
-            if (pc.z() < 0.3)
-            {
-              continue;
-            }
-            const int u = static_cast<int>(std::lround(ref.fx * pc.x() / pc.z() + ref.cx));
-            const int v = static_cast<int>(std::lround(ref.fy * pc.y() / pc.z() + ref.cy));
-            if (u < 0 || v < 0 || u >= ref.width || v >= ref.height)
-            {
-              continue;
-            }
-            const uint16_t observed = ref.depth[static_cast<size_t>(v) * ref.width + u];
-            if (observed == 0)
-            {
-              continue;
-            }
-            const double z = static_cast<double>(observed) * 0.001;
-            const double du = (static_cast<double>(u) - ref.cx) / ref.fx;
-            const double dv = (static_cast<double>(v) - ref.cy) / ref.fy;
-            const double range_d = z * std::sqrt(du * du + dv * dv + 1.0);
-            const double range_p = pc.norm();
-            if (range_d > range_p + gap)
-            {
-              contra = true;
-              break;
-            }
-            if (std::abs(range_d - range_p) <= agree)
-            {
-              support = true;
-            }
-          }
-          if (contra)
-          {
-            ++contradicted;
-            reject();
-            continue;
-          }
-          if (!support)
-          {
-            ++unconfirmed;
-            reject();
-            continue;
-          }
-        }
-        if (!frozen && AnotherLayerOnRay(submap, center, Rt * (p_cam / length), length))
-        {
-          ++layered;
-          reject();
-          continue;
-        }
         range[idx] = static_cast<float>(length);
         ++kept;
       }
-    }
-    if (freeze)
-    {
-      frame->verified = true;
     }
 
     const double block_size = BlockSize();
     // Samples along the band at most half a block apart cannot skip a block.
     const double step = std::min(trunc, block_size * 0.5);
+    const bool carve = config.carve_free_space && config.carve_weight > 0.0;
+    const double carve_near = std::max(config.min_range_m, 0.05);
     BlockSet candidates;
 #pragma omp parallel
     {
@@ -704,6 +562,19 @@ struct DenseMapper::Impl
           }
           const Eigen::Vector3d dir =
               (Rt * Eigen::Vector3d((x - cx) / fx, (y - cy) / fy, 1.0)).normalized();
+          // The truncation band only covers the new surface. An older surface
+          // in front of it sits on the rest of the ray and has to be visited too.
+          if (carve)
+          {
+            for (double s = carve_near; s < static_cast<double>(r) - trunc; s += step)
+            {
+              const BlockKey key = KeyOf(center + dir * s);
+              if (submap.blocks.find(key) != submap.blocks.end())
+              {
+                local.insert(key);
+              }
+            }
+          }
           for (double s = r - trunc; s < r + trunc; s += step)
           {
             local.insert(KeyOf(center + dir * s));
@@ -714,7 +585,6 @@ struct DenseMapper::Impl
 #pragma omp critical(dense_candidates)
       candidates.insert(local.begin(), local.end());
     }
-    const bool carve = config.carve_free_space && config.carve_weight > 0.0;
     if (carve)
     {
       const double half_diag = block_size * 0.8660254;
@@ -801,19 +671,33 @@ struct DenseMapper::Impl
               continue;
             }
             Voxel &cell = block[VoxelIndex(ix, iy, iz)];
+            // A newer keyframe already updated this voxel, including clearing it.
+            if (cell.last_id > frame->image_id)
+            {
+              continue;
+            }
             float w = frame->conf.empty() ? 1.f : frame->conf[pidx] / 255.f;
             float tsdf = sdf / trunc_f;
             const bool in_band = sdf <= trunc_f;
             const float old_weight = cell.weight();
             if (!in_band)
             {
-              // Free space only erodes what is already there; it never creates voxels.
+              // Farther than the truncation band: this voxel sits in front of the
+              // measured surface. A weighted nudge cannot beat a saturated
+              // surface, so drop a share of the maximum weight instead.
               if (carve_scale <= 0.f || old_weight <= 0.f)
               {
                 continue;
               }
-              tsdf = 1.f;
-              w *= carve_scale;
+              float weight = old_weight - carve_scale * kMaxWeight;
+              if (weight < static_cast<float>(config.surface_min_weight))
+              {
+                weight = 0.f;
+              }
+              cell.set(1.f, weight);
+              cell.last_id = frame->image_id;
+              touched = true;
+              continue;
             }
             if (w <= 0.f)
             {
@@ -827,6 +711,7 @@ struct DenseMapper::Impl
                   std::lround((static_cast<float>(cell.gray) * old_weight + g * w) / sum));
             }
             cell.set((cell.sdf() * old_weight + tsdf * w) / sum, std::min(sum, kMaxWeight));
+            cell.last_id = frame->image_id;
             touched = true;
           }
         }
@@ -849,14 +734,22 @@ struct DenseMapper::Impl
     }
     if (log)
     {
-      PRINT_INFO("[DENSE]: fuse image %u submap %u refs=%zu keep=%d contradict=%d unconfirmed=%d "
-                 "layered=%d blocks=%zu/%zu\n",
-                 frame->image_id, submap.id, refs.size(), kept, contradicted, unconfirmed, layered,
-                 touched.size(), keys.size());
+      PRINT_INFO("[DENSE]: fuse image %u submap %u keep=%d blocks=%zu/%zu\n",
+                 frame->image_id, submap.id, kept, touched.size(), keys.size());
     }
     if (only == nullptr)
     {
       frame->blocks = std::move(touched);
+      if (carve)
+      {
+        for (auto &item : submaps)
+        {
+          if (item.first != submap.id)
+          {
+            CarveInFront(*frame, item.second);
+          }
+        }
+      }
     }
     else
     {
@@ -866,7 +759,7 @@ struct DenseMapper::Impl
       }
       frame->blocks.insert(touched.begin(), touched.end());
     }
-    return freeze;
+    return false;
   }
 
   bool WriteFrame(const DepthFrame &frame) const
@@ -1002,15 +895,16 @@ struct DenseMapper::Impl
   }
 
   /// Integrate() for any fused frame: evicted pixels are read back for the
-  /// call and released again, and a newly frozen verdict is written to disk.
-  void Fuse(DepthFrame *frame, Submap &submap, const BlockSet *only, bool log)
+  /// call and released again.
+  void Fuse(DepthFrame *frame, Submap &submap, const BlockSet *only, bool log,
+            bool current_pose = false)
   {
     const bool resident = frame->Resident();
     if (!resident && !LoadPixels(frame))
     {
       return;
     }
-    if (Integrate(frame, submap, only, log))
+    if (Integrate(frame, submap, only, log, current_pose))
     {
       WriteFrame(*frame);
     }
@@ -1689,17 +1583,12 @@ struct DenseMapper::Impl
     return false;
   }
 
-  /// Clears the dirty blocks of one submap and fuses its members that touched
-  /// them again. Members whose pose changed are fused everywhere: all their old
-  /// blocks are dirty, so outside the dirty set they add their new contribution
-  /// exactly once. Nothing outside this submap is touched.
+  /// Rebuilds dirty blocks from the frames whose pose changed, oldest first.
+  /// Voxels a newer keyframe already wrote or cleared are left in place, so
+  /// replaying an older depth cannot bring a replaced surface back.
   void FlushSubmap(Submap &submap)
   {
     const auto start = Clock::now();
-    for (const BlockKey &key : submap.replay_dirty)
-    {
-      ClearBlock(submap, key);
-    }
     std::vector<DepthFrame *> members;
     for (auto &item : frames)
     {
@@ -1710,30 +1599,74 @@ struct DenseMapper::Impl
     }
     std::sort(members.begin(), members.end(),
               [](const DepthFrame *a, const DepthFrame *b) { return a->image_id < b->image_id; });
-    size_t replayed = 0;
-    size_t moved = 0;
-    for (DepthFrame *frame : members)
+    uint32_t changed_max = 0;
+    bool any_changed = false;
+    for (const DepthFrame *frame : members)
     {
-      if (submap.replay_changed.count(frame->image_id) != 0)
+      if (submap.replay_changed.count(frame->image_id) == 0)
       {
-        Fuse(frame, submap, nullptr, false);
-        ++replayed;
-        ++moved;
         continue;
       }
-      bool hits = false;
+      changed_max = std::max(changed_max, frame->image_id);
+      any_changed = true;
+    }
+    if (!any_changed)
+    {
+      for (const BlockKey &key : submap.replay_dirty)
+      {
+        ClearBlock(submap, key);
+      }
+    }
+    else
+    {
+      for (const BlockKey &key : submap.replay_dirty)
+      {
+        const auto it = submap.blocks.find(key);
+        if (it == submap.blocks.end())
+        {
+          continue;
+        }
+        for (Voxel &voxel : it->second)
+        {
+          if (voxel.last_id <= changed_max)
+          {
+            voxel = Voxel{};
+          }
+        }
+        submap.surface_dirty.insert(key);
+      }
+    }
+    const auto touches_dirty = [&](const DepthFrame *frame) {
+      if (submap.replay_changed.count(frame->image_id) != 0)
+      {
+        return true;
+      }
       for (const BlockKey &key : frame->blocks)
       {
         if (submap.replay_dirty.count(key) != 0)
         {
-          hits = true;
-          break;
+          return true;
         }
       }
-      if (hits)
+      return false;
+    };
+    size_t replayed = 0;
+    size_t moved = 0;
+    for (DepthFrame *frame : members)
+    {
+      if (any_changed && frame->image_id > changed_max)
       {
-        Fuse(frame, submap, &submap.replay_dirty, false);
-        ++replayed;
+        continue;
+      }
+      if (!touches_dirty(frame))
+      {
+        continue;
+      }
+      Fuse(frame, submap, &submap.replay_dirty, false, true);
+      ++replayed;
+      if (submap.replay_changed.count(frame->image_id) != 0)
+      {
+        ++moved;
       }
     }
     // Blocks nobody wrote again (e.g. only a removed frame saw them) are freed.
@@ -1743,7 +1676,7 @@ struct DenseMapper::Impl
       const auto it = submap.blocks.find(key);
       if (it != submap.blocks.end() &&
           std::all_of(it->second.begin(), it->second.end(),
-                      [](const Voxel &v) { return v.weight_q == 0; }))
+                      [](const Voxel &v) { return v.weight_q == 0 && v.last_id == 0; }))
       {
         submap.blocks.erase(it);
         ++freed;
@@ -1935,16 +1868,6 @@ struct DenseMapper::Impl
       return;
     }
     std::sort(ids.begin(), ids.end());
-    // Frames not verified yet need their neighbours as references, so their
-    // pixels are all loaded up front. Verified frames stream one at a time.
-    for (const uint32_t id : ids)
-    {
-      DepthFrame &frame = frames[id];
-      if (!frame.verified)
-      {
-        LoadPixels(&frame);
-      }
-    }
     // Submaps are not stored: the same assignment rule rebuilds them in id order.
     for (const uint32_t id : ids)
     {
@@ -1975,7 +1898,7 @@ struct DenseMapper::Impl
         ReleasePixels(&frame);
       }
     }
-    // The newest stored frames verify the first keyframes of this session.
+    // Keep the newest stored frames resident for the next session's fusion.
     const size_t keep = config.resident_frames > 0 ? static_cast<size_t>(config.resident_frames) : ids.size();
     for (size_t i = ids.size() > keep ? ids.size() - keep : 0; i < ids.size(); ++i)
     {

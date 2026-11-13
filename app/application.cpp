@@ -207,10 +207,6 @@ namespace vslam
     parser->parse_config("dense_sparse_depth_ratio", map_cfg.dense.sparse_depth_ratio, false);
     parser->parse_config("dense_sparse_depth_margin_m", map_cfg.dense.sparse_depth_margin_m, false);
     parser->parse_config("dense_sparse_dilate_px", map_cfg.dense.sparse_dilate_px, false);
-    parser->parse_config("dense_verify_frames", map_cfg.dense.verify_frames, false);
-    parser->parse_config("dense_verify_min_baseline_m", map_cfg.dense.verify_min_baseline_m, false);
-    parser->parse_config("dense_verify_agree_m", map_cfg.dense.verify_agree_m, false);
-    parser->parse_config("dense_verify_gap_m", map_cfg.dense.verify_gap_m, false);
     parser->parse_config("dense_integrate_delay_frames", map_cfg.dense.integrate_delay_frames, false);
     parser->parse_config("dense_pose_track_frames", map_cfg.dense.pose_track_frames, false);
     parser->parse_config("dense_pose_update_trans_m", map_cfg.dense.pose_update_trans_m, false);

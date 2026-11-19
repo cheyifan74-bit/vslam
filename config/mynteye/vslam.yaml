@@ -124,6 +124,7 @@ mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step len
 mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
 mapper_ba_fixed_min_points: 30          # LBA gauge = oldest window KF with >= this many 3D points; 0 = oldest
 mapper_ba_loop_max_num_iterations: 50      # loop BA over the corrected chain (local BA uses 10)
+mapper_ba_num_threads: 2                   # Ceres threads for local/loop BA; <=0 = all cores (hurts VIO)
 mapper_ba_loop_pose_prior_rot_sigma_deg: 2.0   # loop BA: chain frames tied to their pose-graph pose; <=0 disables
 mapper_ba_loop_pose_prior_trans_sigma_m: 0.05
 mapper_ba_loop_min_point_track_length: 3       # loop BA: shorter tracks held constant; <=0 disables
@@ -177,6 +178,7 @@ loop_pose_graph_odom_trans_sigma_m: 0.02
 loop_pose_graph_odom_trans_sigma_ratio: 0.03  # grows with step length
 loop_pose_graph_loop_min_rot_sigma_deg: 0.2   # floor on the PnP-covariance loop edge sigma
 loop_pose_graph_loop_min_trans_sigma_m: 0.02
+loop_pose_graph_num_threads: 2           # Ceres threads for pose graph; <=0 = all cores
 loop_rover_enabled: true                 # trajectory-prior check, reject loops that deform the trajectory
 loop_rover_min_threshold_m: 0.5          # m; RMSE of aligned centers before/after the pose graph
 loop_rover_threshold_ratio: 0.01         # threshold grows with the path length between loop and current
@@ -194,6 +196,7 @@ loop_reloc_min_inliers: 80            # PnP inliers to accept the relocalization
 loop_reloc_max_rot_vs_essential_deg: 3.0   # PnP vs essential rotation; <=0 disables
 
 dense_enabled: true
+dense_num_threads: 2                     # OpenMP threads for TSDF fuse/rebuild; <=0 = all cores (hurts VIO)
 # 896x480 keeps ~110 deg of the fisheye's ~117 deg horizontal field. 512x512 crops the right side.
 dense_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/S2M2_M_896_480_fp16.engine"
 dense_rect_width: 896

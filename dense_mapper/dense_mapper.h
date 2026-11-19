@@ -80,6 +80,8 @@ struct DenseConfig
   /// is within submap_max_distance_m of its origin. <=0: one global volume.
   int submap_max_frames = 40;
   double submap_max_distance_m = 4.0;
+  /// OpenMP threads for TSDF fusion / rebuild. <=0 uses all cores (hurts VIO).
+  int num_threads = 2;
 };
 
 struct DenseCloud

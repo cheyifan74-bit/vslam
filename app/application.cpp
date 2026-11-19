@@ -222,6 +222,7 @@ namespace vslam
     parser->parse_config("dense_publish_period_s", map_cfg.dense.publish_period_s, false);
     parser->parse_config("dense_submap_max_frames", map_cfg.dense.submap_max_frames, false);
     parser->parse_config("dense_submap_max_distance_m", map_cfg.dense.submap_max_distance_m, false);
+    parser->parse_config("dense_num_threads", map_cfg.dense.num_threads, false);
 
     parser->parse_config("sift_use_gpu", map_cfg.sift.use_gpu, false);
     parser->parse_config("sift_gpu_index", map_cfg.sift.gpu_index, false);
@@ -328,6 +329,8 @@ namespace vslam
                         map_cfg.mapper.ba_fixed_min_points, false);
     parser->parse_config("mapper_ba_loop_max_num_iterations",
                         map_cfg.mapper.ba_loop_max_num_iterations, false);
+    parser->parse_config("mapper_ba_num_threads",
+                        map_cfg.mapper.ba_num_threads, false);
     parser->parse_config("mapper_ba_loop_pose_prior_rot_sigma_deg",
                         map_cfg.mapper.ba_loop_pose_prior_rot_sigma_deg, false);
     parser->parse_config("mapper_ba_loop_pose_prior_trans_sigma_m",
@@ -417,6 +420,8 @@ namespace vslam
                         map_cfg.loop.pose_graph_loop_min_rot_sigma_deg, false);
     parser->parse_config("loop_pose_graph_loop_min_trans_sigma_m",
                         map_cfg.loop.pose_graph_loop_min_trans_sigma_m, false);
+    parser->parse_config("loop_pose_graph_num_threads",
+                        map_cfg.loop.pose_graph_num_threads, false);
     parser->parse_config("loop_rover_enabled",
                         map_cfg.loop.rover_enabled, false);
     parser->parse_config("loop_rover_min_threshold_m",

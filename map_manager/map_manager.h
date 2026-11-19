@@ -131,6 +131,8 @@ namespace vslam
     int ba_vio_prior_max_gap = 5;
     int ba_fixed_min_points = 0;
     int ba_loop_max_num_iterations = 50;
+    /// Ceres threads for local / loop BA. <=0 uses all cores (hurts VIO).
+    int ba_num_threads = 2;
     double ba_loop_pose_prior_rot_sigma_deg = 2.0;
     double ba_loop_pose_prior_trans_sigma_m = 0.05;
     int ba_loop_min_point_track_length = 3;
@@ -182,6 +184,8 @@ namespace vslam
     double pose_graph_odom_trans_sigma_ratio = 0.03;
     double pose_graph_loop_min_rot_sigma_deg = 0.2;
     double pose_graph_loop_min_trans_sigma_m = 0.02;
+    /// Ceres threads for the pose-graph solve. <=0 uses all cores.
+    int pose_graph_num_threads = 2;
     bool rover_enabled = true;
     double rover_min_threshold_m = 0.5;
     double rover_threshold_ratio = 0.01;

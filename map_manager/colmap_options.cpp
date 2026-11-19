@@ -98,6 +98,7 @@ namespace vslam
     options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
     options.ba_fixed_min_points = cfg.ba_fixed_min_points;
     options.ba_loop_max_num_iterations = cfg.ba_loop_max_num_iterations;
+    options.ba_num_threads = cfg.ba_num_threads;
     options.ba_loop_pose_prior_rot_sigma_deg =
         cfg.ba_loop_pose_prior_rot_sigma_deg;
     options.ba_loop_pose_prior_trans_sigma_m =
@@ -152,6 +153,7 @@ namespace vslam
     options.pose_graph_odom_trans_sigma_ratio = cfg.pose_graph_odom_trans_sigma_ratio;
     options.pose_graph_loop_min_rot_sigma_deg = cfg.pose_graph_loop_min_rot_sigma_deg;
     options.pose_graph_loop_min_trans_sigma_m = cfg.pose_graph_loop_min_trans_sigma_m;
+    options.pose_graph_num_threads = cfg.pose_graph_num_threads;
     options.rover_enabled = cfg.rover_enabled;
     options.rover_min_threshold_m = cfg.rover_min_threshold_m;
     options.rover_threshold_ratio = cfg.rover_threshold_ratio;

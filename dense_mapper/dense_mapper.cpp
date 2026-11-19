@@ -19,6 +19,10 @@
 #include <Eigen/Geometry>
 #include <opencv2/imgproc.hpp>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include "dense_mapper/s2m2_engine.h"
 #include "dense_mapper/stereo_rectifier.h"
 #include "utils/print.h"
@@ -1960,6 +1964,13 @@ struct DenseMapper::Impl
 
   void FuseLoop()
   {
+#ifdef _OPENMP
+    // Bound fusion/rebuild parallelism so Dense does not starve the VIO thread.
+    if (config.num_threads > 0)
+    {
+      omp_set_num_threads(config.num_threads);
+    }
+#endif
     LoadStoredFrames();
     {
       std::lock_guard<std::mutex> lock(mutex);

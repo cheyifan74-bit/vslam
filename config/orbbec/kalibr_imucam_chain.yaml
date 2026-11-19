@@ -1,27 +1,8 @@
 %YAML:1.0
-
-# Orbbec Gemini 335L -> stereo IR pair @ 640x480, hardware rectified
-#   左目: /camera/left_ir/image_raw   (mono8, 30 Hz)
-#   右目: /camera/right_ir/image_raw  (mono8, 30 Hz)
-#
-# 内参来自设备出厂标定, 左右完全相同(说明已做立体校正), 也与
-# /camera/left_ir/camera_info 一致:
-#   fx = fy = 373.411682, cx = 321.2, cy = 246.5
-# 畸变全 0 => radtan 零畸变模型。
-#
-# 基线: baseline = 95.352 mm (get_baseline())
-# 右目在左目 +X 方向 95.352 mm => cam1 的 t 比 cam0 小 0.095352 m
-#
-# T_cam_imu 约定 (与 config/mynteye 相同):
-#   R = R_ItoC (IMU -> camera 旋转)
-#   t = p_IinC (IMU 原点在相机坐标系下的位置)
-# IMU 与光轴对齐的初值猜测; calib_cam_extrinsics: true 会在线修正,
-# 建议后续跑 Kalibr imu-cam 标定拿真值。
-cam0:
   T_cam_imu:
-    - [1.0, 0.0, 0.0, 0.025]
-    - [0.0, 1.0, 0.0, 0.0]
-    - [0.0, 0.0, 1.0, 0.0]
+    - [1.0, 0.0, 0.0, 0.007886000156402588]
+    - [0.0, 1.0, 0.0, 0.001085999965667725]
+    - [0.0, 0.0, 1.0, -0.0142480001449585]
     - [0.0, 0.0, 0.0, 1.0]
   cam_overlaps: [1]
   camera_model: pinhole
@@ -33,9 +14,9 @@ cam0:
   timeshift_cam_imu: 0.0
 cam1:
   T_cam_imu:
-    - [1.0, 0.0, 0.0, -0.070352]
-    - [0.0, 1.0, 0.0, 0.0]
-    - [0.0, 0.0, 1.0, 0.0]
+    - [1.0, 0.0, 0.0, -0.08746569967269897]
+    - [0.0, 1.0, 0.0, 0.001085999965667725]
+    - [0.0, 0.0, 1.0, -0.0142480001449585]
     - [0.0, 0.0, 0.0, 1.0]
   cam_overlaps: [0]
   camera_model: pinhole

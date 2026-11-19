@@ -128,6 +128,13 @@ else()
   foreach(_dep ${VSLAM_AMENT_DEPS})
     find_package(${_dep} REQUIRED)
   endforeach()
+  find_package(orbbec_camera_msgs QUIET)
+  if(orbbec_camera_msgs_FOUND)
+    list(APPEND VSLAM_AMENT_DEPS orbbec_camera_msgs)
+    message(STATUS "orbbec_camera_msgs found — OVO Extrinsics topics enabled")
+  else()
+    message(WARNING "orbbec_camera_msgs not found — OVO will fall back to left IR unless yaml override is set")
+  endif()
 endif()
 
 # COLMAP options (CUDA GPU SIFT; GUI/OpenGL off).
@@ -242,6 +249,7 @@ target_link_libraries(vslam_node
   CUDA::cudart
   ${VSLAM_NVINFER}
 )
+
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
   target_link_libraries(vslam_node OpenMP::OpenMP_CXX)

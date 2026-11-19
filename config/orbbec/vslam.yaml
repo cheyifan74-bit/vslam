@@ -193,46 +193,8 @@ loop_reloc_min_num_3d_correspondences: 40  # 2D-3D pairs needed to run PnP
 loop_reloc_min_inliers: 80            # PnP inliers to accept the relocalization
 loop_reloc_max_rot_vs_essential_deg: 3.0   # PnP vs essential rotation; <=0 disables
 
-dense_enabled: true
+dense_enabled: false
 dense_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/S2M2_M_768_480_fp16.engine"
-# OVO: independent instance map (not written into TSDF).
-# v1 uses rectified left as a temporary image; Color topic wiring comes later.
-ovo_enabled: false
-ovo_sam_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/sam2.1_hiera_s_encoder_fp16.engine"
-ovo_clip_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/siglip_384_fp16.engine"
-ovo_clip_enabled: false
-# Run SAM every N observes (1 = every KF; 10 ≈ ~0.1x CLIP/SAM load).
-ovo_segment_every: 0
-ovo_track_th: 100
-ovo_match_distance_th: 0.05
-ovo_point_stride: 4
-ovo_kf_queue_delay: 10
-ovo_k_top_views: 10
-ovo_publish_period_s: 1.0
-ovo_min_range_m: 0.2
-ovo_max_range_m: 4.0
-# Orbbec Color + Extrinsics (requires enable_publish_extrinsic:=true on the camera launch)
-ovo_use_color: true
-ovo_color_fallback_left: false
-# HW-D2C camera depth for OVO (nearest to keyframe ts); false → S2M2 warp fallback
-ovo_use_camera_depth: true
-ovo_color_topic: "/camera/color/image_raw"
-ovo_color_info_topic: "/camera/color/camera_info"
-ovo_depth_topic: "/camera/depth/image_raw"
-ovo_depth_to_color_topic: "/camera/depth_to_color"
-ovo_depth_to_left_ir_topic: "/camera/depth_to_left_ir"
-# Interleave: KF (IR off) vs depth (laser on) ~33ms apart
-ovo_color_sync_slop_s: 0.05
-ovo_color_queue_size: 60
-# Persist OVO: ovo_eval.csv online; instances.ply + summary.json only on flush/exit
-ovo_save_dir: "/tmp/vslam_map/ovo"
-# Keep-latest style: drop old observes when worker is busy (avoid multi-minute backlog).
-ovo_observe_queue_size: 100
-# Loop / dense-replay instance maintenance
-ovo_fuse_centroid_th_m: 1.5
-ovo_fuse_cossim_th: 0.81
-ovo_fuse_overlap_th: 0.35
-ovo_fuse_point_th_m: 0.10
 dense_rect_width: 768
 dense_rect_height: 480
 dense_voxel_m: 0.02

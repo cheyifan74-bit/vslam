@@ -1,0 +1,118 @@
+%YAML:1.0 # need to specify the file type at the top!
+
+# ================================================================
+# Orbbec Gemini 335L : STEREO IR + IMU
+# 左目: /camera/left_ir/image_raw   (mono8 @640x480 30Hz)
+# 右目: /camera/right_ir/image_raw  (mono8 @640x480 30Hz)
+# IMU : /camera/gyro_accel/sample   (200Hz)
+# 硬件立体校正: 左右内参相同, baseline 95.352 mm
+# ================================================================
+
+verbosity: "WARNING" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
+
+use_fej: true # if first-estimate Jacobians should be used (enable for good consistency)
+integration: "rk4" # discrete, rk4, analytical
+use_stereo: true # Gemini 335L 同时输出 left_ir + right_ir
+max_cameras: 2
+
+calib_cam_extrinsics: true # refine the rough T_cam_imu guess online
+calib_cam_intrinsics: false
+calib_cam_timeoffset: false # try true only if the trajectory lags/leads the IMU
+calib_imu_intrinsics: false
+calib_imu_g_sensitivity: false
+
+max_clones: 11
+max_slam: 50
+max_slam_in_update: 25
+max_msckf_in_update: 50
+dt_slam_delay: 1
+
+gravity_mag: 9.81
+
+feat_rep_msckf: "ANCHORED_MSCKF_INVERSE_DEPTH"
+feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
+feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+
+# zero velocity update parameters
+try_zupt: true
+zupt_chi2_multipler: 0 # 0 = disparity based only
+zupt_max_velocity: 0.02
+zupt_noise_multiplier: 10
+zupt_max_disparity: 0.40 # px @640 wide
+zupt_only_at_beginning: false
+
+# ==================================================================
+# Initialization
+# ==================================================================
+
+init_window_time: 2.0
+init_imu_thresh: 0.60
+init_max_disparity: 4.0 # px @640 wide
+init_max_features: 100
+
+init_dyn_use: true
+init_dyn_mle_opt_calib: false
+init_dyn_mle_max_iter: 50
+init_dyn_mle_max_time: 0.05
+init_dyn_mle_max_threads: 6
+init_dyn_num_pose: 6
+init_dyn_min_deg: 5.0
+
+init_dyn_inflation_ori: 10
+init_dyn_inflation_vel: 100
+init_dyn_inflation_bg: 10
+init_dyn_inflation_ba: 100
+init_dyn_min_rec_cond: 1e-15
+
+init_dyn_bias_g: [0.0, 0.0, 0.0]
+init_dyn_bias_a: [0.0, 0.0, 0.0]
+
+# ==================================================================
+# ==================================================================
+
+record_timing_information: false
+record_timing_filepath: "/tmp/traj_timing_orbbec.txt"
+
+save_total_state: false
+filepath_est: "/tmp/ov_estimate_orbbec.txt"
+filepath_std: "/tmp/ov_estimate_std_orbbec.txt"
+filepath_gt: "/tmp/ov_groundtruth_orbbec.txt"
+
+# ==================================================================
+# ==================================================================
+
+# front-end feature tracking
+use_klt: true
+num_pts: 200 # 640x400 mono IR
+fast_threshold: 20
+grid_x: 5
+grid_y: 5
+min_px_dist: 8
+knn_ratio: 0.70
+track_frequency: 30.0
+downsample_cameras: false
+num_opencv_threads: 4
+histogram_method: "CLAHE" # IR + laser dots benefits from CLAHE
+
+fi_max_dist: 10.0
+fi_max_baseline: 200
+fi_max_cond_number: 25000
+
+use_aruco: false
+num_aruco: 1024
+downsize_aruco: true
+
+# ==================================================================
+# ==================================================================
+
+up_msckf_sigma_px: 1.5
+up_msckf_chi2_multipler: 1
+up_slam_sigma_px: 1.5
+up_slam_chi2_multipler: 1
+up_aruco_sigma_px: 1
+up_aruco_chi2_multipler: 1
+
+use_mask: false
+
+relative_config_imu: "kalibr_imu_chain.yaml"
+relative_config_imucam: "kalibr_imucam_chain.yaml"

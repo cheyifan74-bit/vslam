@@ -28,6 +28,7 @@ namespace vslam
     double timestamp = 0.0; ///< seconds, aligned with image stamp
     Pose3d pose;            ///< left-camera pose in global (converted from IMU pose)
     cv::Mat image;          ///< left image clone
+    cv::Mat image_right;    ///< right image clone; empty when the camera is mono
     int cam_id = 0;         ///< always 0 for now (left)
     std::string frame_id;   ///< pose frame name (e.g. "global")
 

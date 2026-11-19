@@ -10,8 +10,11 @@
 #ifndef VSLAM_ROS2_WRAPPER_H
 #define VSLAM_ROS2_WRAPPER_H
 
+#include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -78,9 +81,13 @@ namespace vslam
     void callbackStereo(const ImageMsg::ConstSharedPtr msg0, const ImageMsg::ConstSharedPtr msg1, int cam_id0, int cam_id1);
     void callbackPose(const PoseMsg::ConstSharedPtr pose_msg);
 
-    void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id);
+    void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
+                           const cv::Mat &image_right = cv::Mat());
     void publishKeyframeDebug(const Keyframe &kf);
     void publishMapVisualization(const MapVisualizationSnapshot &snapshot);
+    /// Converts the newest dense update on the ROS executor, never on the dense thread.
+    void publishDenseCloud();
+    void publishDenseFullCloud(const DenseUpdate &update);
     static Pose3d poseFromMsg(const PoseMsg &msg);
     /// Convert poseimu (IMU in global) to left-camera pose in global using OpenVINS extrinsics.
     bool convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const;
@@ -103,6 +110,22 @@ namespace vslam
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_global_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_local_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_map_markers_;
+    /// Full map in "global"; rebuilt at most every dense_full_cloud_period_s.
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dense_cloud_;
+    /// One POINTS marker per submap, posed by world_from_submap: a loop closure
+    /// only re-sends poses, a surface change only its own submap.
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_dense_submaps_;
+    std::mutex dense_cloud_mutex_;
+    std::shared_ptr<const DenseUpdate> latest_dense_;
+    std::unordered_set<uint32_t> dense_changed_ids_;
+    std::unordered_set<uint32_t> dense_removed_ids_;
+    bool dense_full_dirty_ = false;
+    size_t dense_submap_subscribers_ = 0;
+    double dense_full_cloud_period_s_ = 5.0;
+    sensor_msgs::msg::PointCloud2::SharedPtr last_dense_msg_;
+    std::chrono::steady_clock::time_point last_dense_publish_;
+    std::chrono::steady_clock::time_point last_dense_full_build_;
+    rclcpp::TimerBase::SharedPtr dense_timer_;
     bool kf_publish_debug_ = true;
 
     std::vector<rclcpp::Subscription<ImageMsg>::SharedPtr> camera_subs_;

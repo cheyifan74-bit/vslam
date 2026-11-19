@@ -95,16 +95,43 @@ namespace vslam
     pub_map_global_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("map_points_global", 1);
     pub_map_local_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("map_points_local", 1);
     pub_map_markers_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("map_visualization", 1);
+    pub_dense_cloud_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+        "dense_cloud", rclcpp::QoS(1).transient_local());
+    pub_dense_submaps_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
+        "dense_submaps", rclcpp::QoS(1).transient_local());
+    parser_->parse_config("dense_full_cloud_period_s", dense_full_cloud_period_s_, false);
     if (auto map_manager = app_->getMapManager())
+    {
       map_manager->setVisualizationCallback(
           [this](const MapVisualizationSnapshot &snapshot) { publishMapVisualization(snapshot); });
+      // Updates between two timer ticks are merged: the newest snapshot holds
+      // every submap, the id sets say which markers must be re-sent.
+      map_manager->setDenseCloudCallback([this](std::shared_ptr<const DenseUpdate> update) {
+        std::lock_guard<std::mutex> lock(dense_cloud_mutex_);
+        for (const auto &submap : update->changed)
+        {
+          dense_changed_ids_.insert(submap->id);
+          dense_removed_ids_.erase(submap->id);
+        }
+        for (const uint32_t id : update->removed)
+        {
+          dense_removed_ids_.insert(id);
+          dense_changed_ids_.erase(id);
+        }
+        latest_dense_ = std::move(update);
+        dense_full_dirty_ = true;
+      });
+    }
 
     // See map_viz_timer_: RViz joins late and its default QoS is volatile, so the
     // initial snapshot of a resumed map would otherwise be dropped.
     if (auto map_manager = app_->getMapManager())
     {
-      map_viz_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [this, map_manager]()
-                                                { map_manager->publishVisualization(); });
+      map_viz_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [map_manager]() {
+        map_manager->publishVisualization();
+      });
+      dense_timer_ = node_->create_wall_timer(std::chrono::milliseconds(200),
+                                              [this]() { publishDenseCloud(); });
     }
 
     PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect topics...\n");
@@ -197,7 +224,8 @@ namespace vslam
     kf_select->feedPose(stampToSec(pose_msg->header.stamp), camera_pose, pose_msg->header.frame_id);
   }
 
-  void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id)
+  void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
+                                     const cv::Mat &image_right)
   {
     auto kf_select = app_->getKeyframeSelect();
     if (!kf_select)
@@ -206,7 +234,7 @@ namespace vslam
     }
 
     // Callback only enqueues; selection runs on KeyframeSelect worker thread.
-    kf_select->feedImage(timestamp, image, cam_id);
+    kf_select->feedImage(timestamp, image, cam_id, image_right);
   }
 
   void RosWrapper::publishKeyframeDebug(const Keyframe &kf)
@@ -230,6 +258,168 @@ namespace vslam
       const std::string encoding = (kf.image.channels() == 1) ? "mono8" : "bgr8";
       pub_kf_image_->publish(*cv_bridge::CvImage(header, encoding, kf.image).toImageMsg());
     }
+  }
+
+  void RosWrapper::publishDenseCloud()
+  {
+    if (!pub_dense_cloud_ || !pub_dense_submaps_)
+    {
+      return;
+    }
+    std::shared_ptr<const DenseUpdate> latest;
+    std::unordered_set<uint32_t> changed;
+    std::unordered_set<uint32_t> removed;
+    bool full_dirty = false;
+    const auto now = std::chrono::steady_clock::now();
+    const bool full_due =
+        now - last_dense_full_build_ >= std::chrono::duration<double>(dense_full_cloud_period_s_);
+    {
+      std::lock_guard<std::mutex> lock(dense_cloud_mutex_);
+      latest = latest_dense_;
+      changed.swap(dense_changed_ids_);
+      removed.swap(dense_removed_ids_);
+      full_dirty = dense_full_dirty_ && full_due;
+      if (full_dirty)
+      {
+        dense_full_dirty_ = false;
+      }
+    }
+    if (!latest)
+    {
+      return;
+    }
+
+    // Transient-local keeps only the last array, so a new subscriber gets every submap once.
+    const size_t subscribers = pub_dense_submaps_->get_subscription_count();
+    const bool resend_all = subscribers > dense_submap_subscribers_;
+    dense_submap_subscribers_ = subscribers;
+    if (resend_all || !changed.empty() || !removed.empty())
+    {
+      visualization_msgs::msg::MarkerArray markers;
+      const rclcpp::Time stamp = node_->now();
+      for (const auto &submap : latest->submaps)
+      {
+        if (!resend_all && changed.count(submap->id) == 0)
+        {
+          continue;
+        }
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "global";
+        marker.header.stamp = stamp;
+        marker.ns = "dense_submaps";
+        marker.id = static_cast<int>(submap->id);
+        const DenseCloud &cloud = *submap->points;
+        if (cloud.xyz.empty())
+        {
+          marker.action = visualization_msgs::msg::Marker::DELETE;
+          markers.markers.push_back(std::move(marker));
+          continue;
+        }
+        marker.type = visualization_msgs::msg::Marker::POINTS;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.pose.orientation.x = submap->q_world_submap[0];
+        marker.pose.orientation.y = submap->q_world_submap[1];
+        marker.pose.orientation.z = submap->q_world_submap[2];
+        marker.pose.orientation.w = submap->q_world_submap[3];
+        marker.pose.position.x = submap->t_world_submap[0];
+        marker.pose.position.y = submap->t_world_submap[1];
+        marker.pose.position.z = submap->t_world_submap[2];
+        marker.scale.x = latest->point_size_m;
+        marker.scale.y = latest->point_size_m;
+        marker.color.a = 1.f;
+        marker.points.resize(cloud.xyz.size());
+        marker.colors.resize(cloud.xyz.size());
+        for (size_t i = 0; i < cloud.xyz.size(); ++i)
+        {
+          marker.points[i].x = cloud.xyz[i].x();
+          marker.points[i].y = cloud.xyz[i].y();
+          marker.points[i].z = cloud.xyz[i].z();
+          const size_t c = i * 3;
+          const bool has_rgb = c + 2 < cloud.rgb.size();
+          marker.colors[i].r = (has_rgb ? cloud.rgb[c] : 180) / 255.f;
+          marker.colors[i].g = (has_rgb ? cloud.rgb[c + 1] : 180) / 255.f;
+          marker.colors[i].b = (has_rgb ? cloud.rgb[c + 2] : 180) / 255.f;
+          marker.colors[i].a = 1.f;
+        }
+        markers.markers.push_back(std::move(marker));
+      }
+      for (const uint32_t id : removed)
+      {
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "global";
+        marker.header.stamp = stamp;
+        marker.ns = "dense_submaps";
+        marker.id = static_cast<int>(id);
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        markers.markers.push_back(std::move(marker));
+      }
+      if (!markers.markers.empty())
+      {
+        pub_dense_submaps_->publish(markers);
+      }
+    }
+
+    if (full_dirty)
+    {
+      publishDenseFullCloud(*latest);
+      last_dense_publish_ = now;
+      last_dense_full_build_ = now;
+    }
+    else if (last_dense_msg_ && now - last_dense_publish_ >= std::chrono::seconds(5))
+    {
+      // Unchanged map: an occasional resend lets volatile late joiners (RViz default) see it.
+      last_dense_msg_->header.stamp = node_->now();
+      pub_dense_cloud_->publish(*last_dense_msg_);
+      last_dense_publish_ = now;
+    }
+  }
+
+  void RosWrapper::publishDenseFullCloud(const DenseUpdate &update)
+  {
+    size_t count = 0;
+    for (const auto &submap : update.submaps)
+    {
+      count += submap->points->xyz.size();
+    }
+    auto msg_ptr = std::make_shared<sensor_msgs::msg::PointCloud2>();
+    sensor_msgs::msg::PointCloud2 &msg = *msg_ptr;
+    msg.header.frame_id = "global";
+    msg.header.stamp = node_->now();
+    msg.height = 1;
+    msg.width = static_cast<uint32_t>(count);
+    msg.is_dense = true;
+    sensor_msgs::PointCloud2Modifier modifier(msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+    modifier.resize(count);
+    sensor_msgs::PointCloud2Iterator<float> x(msg, "x"), y(msg, "y"), z(msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint32_t> rgb(msg, "rgb");
+    for (const auto &submap : update.submaps)
+    {
+      const Eigen::Quaternionf q(submap->q_world_submap[3], submap->q_world_submap[0],
+                                 submap->q_world_submap[1], submap->q_world_submap[2]);
+      const Eigen::Matrix3f R = q.normalized().toRotationMatrix();
+      const Eigen::Vector3f t(submap->t_world_submap[0], submap->t_world_submap[1],
+                              submap->t_world_submap[2]);
+      const DenseCloud &cloud = *submap->points;
+      for (size_t i = 0; i < cloud.xyz.size(); ++i)
+      {
+        const Eigen::Vector3f p = R * cloud.xyz[i] + t;
+        *x = p.x();
+        *y = p.y();
+        *z = p.z();
+        const size_t c = i * 3;
+        const uint8_t r = c + 2 < cloud.rgb.size() ? cloud.rgb[c] : 180;
+        const uint8_t g = c + 2 < cloud.rgb.size() ? cloud.rgb[c + 1] : 180;
+        const uint8_t b = c + 2 < cloud.rgb.size() ? cloud.rgb[c + 2] : 180;
+        *rgb = (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
+        ++x;
+        ++y;
+        ++z;
+        ++rgb;
+      }
+    }
+    pub_dense_cloud_->publish(msg);
+    last_dense_msg_ = std::move(msg_ptr);
   }
 
   void RosWrapper::publishMapVisualization(const MapVisualizationSnapshot &snapshot)
@@ -477,7 +667,8 @@ namespace vslam
       message.masks.push_back(cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1));
     }
 
-    feedKeyframeImage(message.timestamp, message.images.front(), cam_id0);
+    feedKeyframeImage(message.timestamp, message.images.front(), cam_id0,
+                      message.images.size() > 1 ? message.images[1] : cv::Mat());
     viz_->handleCameraMeasurement(message);
   }
 

@@ -69,6 +69,7 @@ namespace vslam
     options.ba_min_covisibility_points = cfg.ba_min_covisibility_points;
     options.filter_max_reproj_error = cfg.filter_max_reproj_error;
     options.filter_min_tri_angle = cfg.filter_min_tri_angle;
+    options.filter_two_view_min_tri_angle = cfg.filter_two_view_min_tri_angle;
     options.triangulation.max_transitivity = cfg.tri_max_transitivity;
     options.triangulation.create_max_angle_error = cfg.tri_create_max_angle_error;
     options.triangulation.continue_max_angle_error =
@@ -97,37 +98,21 @@ namespace vslam
     options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
     options.ba_fixed_min_points = cfg.ba_fixed_min_points;
     options.ba_loop_max_num_iterations = cfg.ba_loop_max_num_iterations;
+    options.ba_num_threads = cfg.ba_num_threads;
+    options.ba_loop_pose_prior_rot_sigma_deg =
+        cfg.ba_loop_pose_prior_rot_sigma_deg;
+    options.ba_loop_pose_prior_trans_sigma_m =
+        cfg.ba_loop_pose_prior_trans_sigma_m;
+    options.ba_loop_min_point_track_length = cfg.ba_loop_min_point_track_length;
+    options.ba_loop_min_point_tri_angle_deg =
+        cfg.ba_loop_min_point_tri_angle_deg;
     options.ba_min_window_images = cfg.ba_min_window_images;
     options.ba_temporal_window_images = cfg.ba_temporal_window_images;
     options.sparse_write_every_n = cfg.sparse_write_every_n;
-    options.cull_enabled = cfg.cull_enabled;
-    options.cull_redundant_ratio = cfg.cull_redundant_ratio;
-    options.cull_min_other_observers = cfg.cull_min_other_observers;
-    options.cull_max_scale_ratio = cfg.cull_max_scale_ratio;
-    options.cull_min_num_points = cfg.cull_min_num_points;
-    options.cull_protect_recent = cfg.cull_protect_recent;
-    options.cull_max_neighbor_distance_m = cfg.cull_max_neighbor_distance_m;
-    options.cull_max_neighbor_angle_deg = cfg.cull_max_neighbor_angle_deg;
-    options.cull_max_per_frame = cfg.cull_max_per_frame;
-    options.cull_prior_session = cfg.cull_prior_session;
-    options.insert_check_enabled = cfg.insert_check_enabled;
-    options.insert_redundant_ratio = cfg.insert_redundant_ratio;
-    options.insert_ref_tracked_ratio = cfg.insert_ref_tracked_ratio;
-    options.insert_min_tracked = cfg.insert_min_tracked;
-    options.insert_max_kf_distance_m = cfg.insert_max_kf_distance_m;
-    options.insert_max_kf_angle_deg = cfg.insert_max_kf_angle_deg;
-    options.insert_max_consecutive_skips = cfg.insert_max_consecutive_skips;
-    options.point_stats_enabled = cfg.point_stats_enabled;
-    options.stale_min_visible = cfg.stale_min_visible;
-    options.stale_max_found_ratio = cfg.stale_max_found_ratio;
-    options.stale_session_decay = cfg.stale_session_decay;
-    options.stale_prior_session_only = cfg.stale_prior_session_only;
     options.capacity_enabled = cfg.capacity_enabled;
     options.capacity_voxel_m = cfg.capacity_voxel_m;
-    options.capacity_yaw_bins = cfg.capacity_yaw_bins;
+    options.capacity_view_angle_deg = cfg.capacity_view_angle_deg;
     options.capacity_max_per_cell = cfg.capacity_max_per_cell;
-    options.capacity_replace_ratio = cfg.capacity_replace_ratio;
-    options.capacity_min_session_frames = cfg.capacity_min_session_frames;
     return options;
   }
 
@@ -168,6 +153,7 @@ namespace vslam
     options.pose_graph_odom_trans_sigma_ratio = cfg.pose_graph_odom_trans_sigma_ratio;
     options.pose_graph_loop_min_rot_sigma_deg = cfg.pose_graph_loop_min_rot_sigma_deg;
     options.pose_graph_loop_min_trans_sigma_m = cfg.pose_graph_loop_min_trans_sigma_m;
+    options.pose_graph_num_threads = cfg.pose_graph_num_threads;
     options.rover_enabled = cfg.rover_enabled;
     options.rover_min_threshold_m = cfg.rover_min_threshold_m;
     options.rover_threshold_ratio = cfg.rover_threshold_ratio;

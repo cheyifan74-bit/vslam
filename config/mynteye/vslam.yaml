@@ -11,8 +11,8 @@
 # ------------------------------------------------------------------
 
 # Selection thresholds
-kf_dist_thresh: 1          # meters; select if translation from last KF exceeds this
-kf_angle_thresh_deg: 20.0    # degrees; select if rotation from last KF exceeds this
+kf_dist_thresh: 0.5          # meters; select if translation from last KF exceeds this
+kf_angle_thresh_deg: 15.0    # degrees; select if rotation from last KF exceeds this
 
 # Image-pose timestamp sync
 kf_sync_slop: 0.02           # seconds; max |t_image - t_pose| to pair
@@ -95,14 +95,16 @@ mapper_abs_pose_min_inlier_ratio: 0.25
 mapper_ba_local_num_images: 30              # 0 = no cap on first-level window
 mapper_ba_min_covisibility_points: 15      # first-level = shared 3D >= this
 mapper_filter_max_reproj_error: 2.0        # pixels; FilterPoints3DInImages
-mapper_filter_min_tri_angle: 1.5           # degrees; FilterPoints3DInImages
+mapper_filter_min_tri_angle: 3.0           # degrees; FilterPoints3DInImages
+# Tracks that shrink to two views after filtering. Angle below this is deleted.
+mapper_filter_two_view_min_tri_angle: 8.0
 mapper_tri_max_transitivity: 3
 mapper_tri_create_max_angle_error: 1.0     # degrees; new triangulation
 mapper_tri_continue_max_angle_error: 2.0   # degrees; continue existing tracks
 mapper_tri_merge_max_reproj_error: 4.0     # pixels; MergeTracks
 mapper_tri_complete_max_reproj_error: 4.0  # pixels; CompleteTracks / CompleteImage
 mapper_tri_complete_max_transitivity: 5
-mapper_tri_min_angle: 2.0                  # degrees; min pairwise triangulation angle
+mapper_tri_min_angle: 3.0                  # degrees; min pairwise triangulation angle
 mapper_tri_ignore_two_view_tracks: true   # false = keep 2-view tracks
 # Local-map projection matching (points of the last N registered KFs, descriptor-checked)
 mapper_local_map_num_images: 15            # <=0 disables
@@ -122,43 +124,22 @@ mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step len
 mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
 mapper_ba_fixed_min_points: 30          # LBA gauge = oldest window KF with >= this many 3D points; 0 = oldest
 mapper_ba_loop_max_num_iterations: 50      # loop BA over the corrected chain (local BA uses 10)
+mapper_ba_num_threads: 2                   # Ceres threads for local/loop BA; <=0 = all cores (hurts VIO)
+mapper_ba_loop_pose_prior_rot_sigma_deg: 2.0   # loop BA: chain frames tied to their pose-graph pose; <=0 disables
+mapper_ba_loop_pose_prior_trans_sigma_m: 0.05
+mapper_ba_loop_min_point_track_length: 3       # loop BA: shorter tracks held constant; <=0 disables
+mapper_ba_loop_min_point_tri_angle_deg: 2.0    # loop BA: points below this max tri angle held constant; <=0 disables
 # Local BA window padding when covisibility is weak (e.g. VIO-fallback frames)
 mapper_ba_min_window_images: 4             # pad windows smaller than this; <=0 disables
 mapper_ba_temporal_window_images: 5        # at most this many recent registered KFs added
 mapper_sparse_write_every_n: 10            # <=1 writes sparse every keyframe; init/loop/exit always flush
-# Redundant keyframe culling over the covisible window of each new keyframe
-mapper_cull_enabled: true
-mapper_cull_redundant_ratio: 0.9           # cull when this share of its 3D points is seen elsewhere
-mapper_cull_min_other_observers: 3         # ... by at least this many other KFs
-mapper_cull_max_scale_ratio: 1.2           # ... from no farther than this x its own viewing distance
-mapper_cull_min_num_points: 30             # weaker frames carry the VIO chain, never culled
-mapper_cull_protect_recent: 5              # newest N registered KFs are never culled
-mapper_cull_max_neighbor_distance_m: 3.0   # VIO-chain neighbours left around a culled KF must stay this close
-mapper_cull_max_neighbor_angle_deg: 45.0
-mapper_cull_max_per_frame: 1
-mapper_cull_prior_session: true           # also cull KFs loaded from a previous session
-# Keyframe insertion check: a frame localized next to an existing keyframe whose
-# points are already covered by the map is dropped (only updates point stats)
-mapper_insert_check_enabled: true
-mapper_insert_redundant_ratio: 0.75        # share of tracked points already seen by >= 3 other KFs
-mapper_insert_ref_tracked_ratio: 0.9       # drop when tracked >= this x the reference KF's 3D points (ORB-SLAM)
-mapper_insert_min_tracked: 40              # fewer tracked 3D points always inserts
-mapper_insert_max_kf_distance_m: 1.0       # reference KF this close, sharing >= half the tracked points
-mapper_insert_max_kf_angle_deg: 30.0
-mapper_insert_max_consecutive_skips: 10    # then force a keyframe (and a loop query)
-# Map freshness: per-point visible/found statistics, stale points are removed
-mapper_point_stats_enabled: true
-mapper_stale_min_visible: 15               # checks (keypoint near the projection) before a point can be judged
-mapper_stale_max_found_ratio: 0.25         # remove points matched in fewer than this share of checks
-mapper_stale_session_decay: 0.5            # scale of the previous sessions' counts on resume
-mapper_stale_prior_session_only: true      # judge only points no KF of this session observes
-# Spatial capacity: at most N KFs per voxel x viewing-yaw bin, lowest score evicted
+# Spatial grid, applied after local BA (and loop BA): a cell is a voxel of the
+# camera center plus a viewing direction. The newest keyframe in a cell
+# replaces the older ones, so the map keeps the latest pass over the scene.
 mapper_capacity_enabled: true
-mapper_capacity_voxel_m: 1.0
-mapper_capacity_yaw_bins: 4
-mapper_capacity_max_per_cell: 2
-mapper_capacity_replace_ratio: 0.5         # replace an old KF only if it scores below this x the new one, else drop the new
-mapper_capacity_min_session_frames: 20     # KFs mapped this session before previous-session KFs can be replaced
+mapper_capacity_voxel_m: 0.5
+mapper_capacity_view_angle_deg: 25.0       # same cell when the optical axes differ by less than this
+mapper_capacity_max_per_cell: 1            # keyframes kept per cell; the newest stay
 # Delete culled / dropped keyframes from database.db and images/ on exit
 map_compact_database_on_exit: true
 
@@ -197,6 +178,7 @@ loop_pose_graph_odom_trans_sigma_m: 0.02
 loop_pose_graph_odom_trans_sigma_ratio: 0.03  # grows with step length
 loop_pose_graph_loop_min_rot_sigma_deg: 0.2   # floor on the PnP-covariance loop edge sigma
 loop_pose_graph_loop_min_trans_sigma_m: 0.02
+loop_pose_graph_num_threads: 2           # Ceres threads for pose graph; <=0 = all cores
 loop_rover_enabled: true                 # trajectory-prior check, reject loops that deform the trajectory
 loop_rover_min_threshold_m: 0.5          # m; RMSE of aligned centers before/after the pose graph
 loop_rover_threshold_ratio: 0.01         # threshold grows with the path length between loop and current
@@ -212,3 +194,40 @@ loop_reloc_min_num_matches: 30        # feature matches with the candidate
 loop_reloc_min_num_3d_correspondences: 40  # 2D-3D pairs needed to run PnP
 loop_reloc_min_inliers: 80            # PnP inliers to accept the relocalization
 loop_reloc_max_rot_vs_essential_deg: 3.0   # PnP vs essential rotation; <=0 disables
+
+dense_enabled: true
+dense_num_threads: 2                     # OpenMP threads for TSDF fuse/rebuild; <=0 = all cores (hurts VIO)
+# 896x480 keeps ~110 deg of the fisheye's ~117 deg horizontal field. 512x512 crops the right side.
+dense_engine_path: "/home/cyf/vslam_ws/src/vslam/data/models/S2M2_M_896_480_fp16.engine"
+dense_rect_width: 896
+dense_rect_height: 480
+dense_voxel_m: 0.02
+dense_truncation_m: 0.15
+dense_min_range_m: 0.2
+dense_max_range_m: 4.0
+dense_min_confidence: 0.5
+dense_min_visible: 0.5
+dense_weight_reference_range_m: 2.0
+dense_saturate_gray: 0.0
+dense_sparse_depth_ratio: 1.25
+dense_sparse_depth_margin_m: 0.4
+dense_sparse_dilate_px: 12
+# Fuse a keyframe only after this many newer ones, so local BA has refined its
+# pose. Poses of the newest N keyframes are refreshed
+# every keyframe; a fused frame that moved past the thresholds is re-fused.
+dense_integrate_delay_frames: 1
+dense_pose_track_frames: 30
+dense_pose_update_trans_m: 0.01
+dense_pose_update_rot_deg: 0.3
+dense_idle_flush_s: 2.0          # no keyframe for this long: fuse the delayed frames anyway
+dense_carve_free_space: true     # voxels in front of an observed surface, outside the truncation band, lose weight
+dense_carve_weight: 1.0          # fraction of the max voxel weight removed by one view; 1 clears a surface in one pass
+dense_surface_min_weight: 0.5    # voxels below this weight are not extracted
+dense_edge_ratio: 0.08           # drop pixels whose 4-neighbour depth jumps by this share; 0 disables
+dense_replay_max_defer_jobs: 5   # batch block rebuilds over at most this many keyframes
+dense_rebuild_redundant_removals: false  # culled / capacity-evicted keyframes keep their depth in the volume
+dense_resident_frames: 30        # depth of only the newest N fused keyframes stays in RAM; <=0 keeps all
+dense_publish_period_s: 1.0
+dense_submap_max_frames: 40       # keyframes per TSDF submap; a loop moves submaps rigidly, <=0: one volume
+dense_submap_max_distance_m: 4.0  # a keyframe farther than this from the submap anchor starts a new submap
+dense_full_cloud_period_s: 5.0    # full /dense_cloud rebuild period; /dense_submaps is incremental

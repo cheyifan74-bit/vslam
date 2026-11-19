@@ -19,9 +19,13 @@
 #include "colmap/scene/database_session.h"
 #include "colmap/scene/image.h"
 #include "colmap/scene/point3d.h"
+#include "colmap/scene/reconstruction.h"
 #include "colmap/online_sfm/online_incremental_mapper.h"
+
+#include <Eigen/Core>
 #include "colmap/util/types.h"
 
+#include "dense_mapper/dense_mapper.h"
 #include "map_manager/colmap_options.h"
 #include "utility/math_utils.h"
 #include "utils/print.h"
@@ -34,6 +38,10 @@ namespace vslam
   MapManager::~MapManager()
   {
     stopKeyframeConsumer();
+    if (dense_mapper_)
+    {
+      dense_mapper_->stop();
+    }
     // Flush the frame(s) that sparse_write_every_n deferred, otherwise the
     // next session resumes from a map missing the tail of this one.
     if (incremental_mapper_)
@@ -98,6 +106,11 @@ namespace vslam
   bool MapManager::createMap()
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (dense_mapper_)
+    {
+      dense_mapper_->stop();
+      dense_mapper_.reset();
+    }
     incremental_mapper_.reset();
     map_ = std::make_shared<Map>(config_.map, config_.cameras);
     if (!map_->initialize())
@@ -189,6 +202,15 @@ namespace vslam
                config_.loop.mixvpr_engine_path.c_str(),
                static_cast<int>(config_.loop.mixvpr_use_gpu),
                config_.loop.mixvpr_gpu_index.c_str());
+    if (config_.dense.enabled)
+    {
+      dense_mapper_ = std::make_unique<DenseMapper>(config_.dense, config_.cameras, map_->mapDir());
+      if (dense_cloud_callback_)
+      {
+        dense_mapper_->setCloudCallback(dense_cloud_callback_);
+      }
+      dense_mapper_->start();
+    }
     return true;
   }
 
@@ -290,6 +312,14 @@ namespace vslam
       {
         return false;
       }
+      if (!keyframe.image_right.empty())
+      {
+        const std::string right_path = map->makeImageAbsPath(/*left=*/false, file_name);
+        if (!cv::imwrite(right_path, keyframe.image_right))
+        {
+          PRINT_WARNING("[MAP_MANAGER]: failed to save right image %s\n", right_path.c_str());
+        }
+      }
     }
 
     const uint32_t image_id = writeKeyframeImage(*map, keyframe, relative_name);
@@ -305,10 +335,46 @@ namespace vslam
 
     const std::optional<colmap::Rigid3d> vio_prior = vioCamFromWorld(keyframe.pose);
     bool processed = false;
+    colmap::MappingFrameResult mapping_result;
+    std::vector<Eigen::Vector3f> sparse_xyz;
+    std::vector<std::pair<uint32_t, colmap::MappingPose>> dense_poses;
     {
       std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
-      processed = mapper->Process(image_id, abs_path, vio_prior);
+      processed = mapper->Process(image_id, abs_path, vio_prior, &mapping_result);
       last_processed_image_id_ = image_id;
+      if (dense_mapper_)
+      {
+        const colmap::Reconstruction &reconstruction = mapper->GetReconstruction();
+        if (mapping_result.registered && reconstruction.ExistsImage(image_id))
+        {
+          for (const auto &point2D : reconstruction.Image(image_id).Points2D())
+          {
+            if (point2D.HasPoint3D() && reconstruction.ExistsPoint3D(point2D.point3D_id))
+            {
+              sparse_xyz.emplace_back(
+                  reconstruction.Point3D(point2D.point3D_id).xyz.cast<float>());
+            }
+          }
+        }
+        // Loop corrections plus the latest poses of recent keyframes, which
+        // local BA keeps refining after they were submitted.
+        dense_poses.assign(mapping_result.dirty_poses.begin(), mapping_result.dirty_poses.end());
+        for (const uint32_t id : dense_mapper_->trackedIds())
+        {
+          if (reconstruction.ExistsImage(id) && reconstruction.Image(id).HasPose())
+          {
+            dense_poses.emplace_back(
+                id, colmap::PoseFromRigid3d(reconstruction.Image(id).CamFromWorld()));
+          }
+        }
+      }
+    }
+    if (dense_mapper_)
+    {
+      dense_mapper_->submit(image_id, mapping_result.registered, keyframe.image,
+                            keyframe.image_right, mapping_result.cam_from_world,
+                            mapping_result.removed_ids, mapping_result.redundant_ids,
+                            dense_poses, sparse_xyz);
     }
     if (!processed)
     {
@@ -459,6 +525,16 @@ namespace vslam
     // first keyframe of this session is processed, which only happens after VIO
     // initializes and (on resume) after relocalization succeeds.
     publishVisualization();
+  }
+
+  void MapManager::setDenseCloudCallback(DenseMapper::CloudCallback callback)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    dense_cloud_callback_ = std::move(callback);
+    if (dense_mapper_)
+    {
+      dense_mapper_->setCloudCallback(dense_cloud_callback_);
+    }
   }
 
   void MapManager::publishVisualization()

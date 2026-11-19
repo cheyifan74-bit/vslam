@@ -19,6 +19,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+#include "dense_mapper/dense_mapper.h"
 #include "keyframe_select/keyframe.h"
 #include "keyframe_select/keyframe_queue.h"
 #include "map_manager/map.h"
@@ -106,6 +107,7 @@ namespace vslam
     int ba_min_covisibility_points = 15;
     double filter_max_reproj_error = 1.0;
     double filter_min_tri_angle = 1.5;
+    double filter_two_view_min_tri_angle = 8.0;
     int tri_max_transitivity = 1;
     double tri_create_max_angle_error = 2.0;
     double tri_continue_max_angle_error = 2.0;
@@ -129,37 +131,19 @@ namespace vslam
     int ba_vio_prior_max_gap = 5;
     int ba_fixed_min_points = 0;
     int ba_loop_max_num_iterations = 50;
+    /// Ceres threads for local / loop BA. <=0 uses all cores (hurts VIO).
+    int ba_num_threads = 2;
+    double ba_loop_pose_prior_rot_sigma_deg = 2.0;
+    double ba_loop_pose_prior_trans_sigma_m = 0.05;
+    int ba_loop_min_point_track_length = 3;
+    double ba_loop_min_point_tri_angle_deg = 2.0;
     int ba_min_window_images = 4;
     int ba_temporal_window_images = 5;
     int sparse_write_every_n = 10;
-    bool cull_enabled = false;
-    double cull_redundant_ratio = 0.9;
-    int cull_min_other_observers = 3;
-    double cull_max_scale_ratio = 1.2;
-    int cull_min_num_points = 30;
-    int cull_protect_recent = 5;
-    double cull_max_neighbor_distance_m = 3.0;
-    double cull_max_neighbor_angle_deg = 45.0;
-    int cull_max_per_frame = 1;
-    bool cull_prior_session = false;
-    bool insert_check_enabled = false;
-    double insert_redundant_ratio = 0.75;
-    double insert_ref_tracked_ratio = 0.9;
-    int insert_min_tracked = 40;
-    double insert_max_kf_distance_m = 1.0;
-    double insert_max_kf_angle_deg = 30.0;
-    int insert_max_consecutive_skips = 10;
-    bool point_stats_enabled = false;
-    int stale_min_visible = 15;
-    double stale_max_found_ratio = 0.25;
-    double stale_session_decay = 0.5;
-    bool stale_prior_session_only = true;
     bool capacity_enabled = false;
     double capacity_voxel_m = 1.0;
-    int capacity_yaw_bins = 4;
-    int capacity_max_per_cell = 2;
-    double capacity_replace_ratio = 0.5;
-    int capacity_min_session_frames = 20;
+    double capacity_view_angle_deg = 25.0;
+    int capacity_max_per_cell = 1;
     /// Delete culled / dropped keyframes from database.db and images/ on exit.
     bool compact_database_on_exit = false;
   };
@@ -200,6 +184,8 @@ namespace vslam
     double pose_graph_odom_trans_sigma_ratio = 0.03;
     double pose_graph_loop_min_rot_sigma_deg = 0.2;
     double pose_graph_loop_min_trans_sigma_m = 0.02;
+    /// Ceres threads for the pose-graph solve. <=0 uses all cores.
+    int pose_graph_num_threads = 2;
     bool rover_enabled = true;
     double rover_min_threshold_m = 0.5;
     double rover_threshold_ratio = 0.01;
@@ -223,6 +209,7 @@ namespace vslam
     MatchConfig match;
     MapperConfig mapper;
     LoopCloserConfig loop;
+    DenseConfig dense;
   };
 
   /**
@@ -257,6 +244,8 @@ namespace vslam
     /// points in RViz before the first keyframe of this session is processed.
     void setVisualizationCallback(
         std::function<void(const MapVisualizationSnapshot &)> callback);
+    /// Surface cloud of the TSDF. May be invoked from the dense thread.
+    void setDenseCloudCallback(DenseMapper::CloudCallback callback);
 
     /// Publish the current reconstruction (restored map + every processed
     /// keyframe) to the visualization callback. No-op when no callback is set or
@@ -293,6 +282,8 @@ namespace vslam
     /// Only touched while holding mapper_mutex_.
     uint32_t last_processed_image_id_ = 0;
     std::function<void(const MapVisualizationSnapshot &)> visualization_callback_;
+    std::unique_ptr<DenseMapper> dense_mapper_;
+    DenseMapper::CloudCallback dense_cloud_callback_;
   };
 
 } // namespace vslam

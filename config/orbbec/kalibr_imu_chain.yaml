@@ -1,13 +1,6 @@
 %YAML:1.0
 
-# Orbbec Gemini 2 built-in IMU.
-# The launch enables enable_accel/enable_gyro + enable_sync_output_accel_gyro,
-# so the driver publishes one combined sensor_msgs/Imu on
-# /camera/gyro_accel/sample at the requested 200 Hz (measured ~196 Hz).
-#
-# Noise values are conservative MEMS defaults (no Kalibr run yet). If the
-# trajectory is jittery, lower them; if it drifts, raise them slightly.
-# Recommended next step: Kalibr imu-cam calibration for this device.
+
 imu0:
   T_i_b:
     - [1.0, 0.0, 0.0, 0.0]

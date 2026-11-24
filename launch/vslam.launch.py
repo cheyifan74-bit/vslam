@@ -10,7 +10,13 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    LogInfo,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -86,5 +92,11 @@ def launch_setup(context):
 
 def generate_launch_description():
     ld = LaunchDescription(launch_args)
+    # 后台 OpenMP 并行区结束后不要自旋等待, 避免 dense/Ceres 偷走 VIO 的 CPU。
+    # 必须在节点进程启动前设置, libgomp 只在初始化时读取。
+    ld.add_action(SetEnvironmentVariable("OMP_WAIT_POLICY", "PASSIVE"))
+    ld.add_action(SetEnvironmentVariable("GOMP_SPINCOUNT", "0"))
+    ld.add_action(SetEnvironmentVariable("OMP_NUM_THREADS", "2"))
+    ld.add_action(SetEnvironmentVariable("OMP_PROC_BIND", "false"))
     ld.add_action(OpaqueFunction(function=launch_setup))
     return ld

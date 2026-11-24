@@ -1,6 +1,7 @@
 /*
  * @Description: ROS Wrapper — thin ROS glue layer.
  *               Sensor subscription + message conversion + KeyframeSelect ROS I/O.
+ *               Map / dense / keyframe-debug output: visualization/ros1/map_visualizer.h.
  * @Author: che yifan
  * @Date: 2026-07-26 09:39:40
  * @LastEditTime: 2026-08-02
@@ -18,8 +19,6 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Imu.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <visualization_msgs/MarkerArray.h>
 
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -29,6 +28,7 @@
 
 #include "keyframe_select/keyframe.h"
 #include "map_manager/map_manager.h"
+#include "visualization/ros1/map_visualizer.h"
 
 namespace ov_core
 {
@@ -67,8 +67,8 @@ namespace vslam
 
     void init(std::shared_ptr<ros::NodeHandle> nh, const std::string &config_path);
     void setupSubscribers();
-    /// Subscribe pose topic and optional debug publishers for KeyframeSelect.
-    void setupKeyframeSelectTopics();
+    /// Subscribes the pose topic for KeyframeSelect and sets up its debug publishers.
+    void setupKeyframeSelect();
 
     void callbackInertial(const sensor_msgs::Imu::ConstPtr &msg);
     void callbackMonocular(const sensor_msgs::ImageConstPtr &msg, int cam_id);
@@ -76,9 +76,8 @@ namespace vslam
                         int cam_id0, int cam_id1);
     void callbackPose(const PoseMsg::ConstPtr &pose_msg);
 
-    void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id);
-    void publishKeyframeDebug(const Keyframe &kf);
-    void publishMapVisualization(const MapVisualizationSnapshot &snapshot);
+    void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
+                           const cv::Mat &image_right = cv::Mat());
     static Pose3d poseFromMsg(const PoseMsg &msg);
     /// Convert poseimu (IMU in global) to left-camera pose in global using OpenVINS extrinsics.
     bool convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const;
@@ -90,12 +89,6 @@ namespace vslam
 
     ros::Subscriber sub_imu_;
     ros::Subscriber sub_pose_;
-    ros::Publisher pub_kf_pose_;
-    ros::Publisher pub_kf_image_;
-    ros::Publisher pub_map_global_;
-    ros::Publisher pub_map_local_;
-    ros::Publisher pub_map_markers_;
-    bool kf_publish_debug_ = true;
 
     std::vector<ros::Subscriber> camera_subs_;
 
@@ -103,6 +96,9 @@ namespace vslam
     // Subscribers must outlive the Synchronizer (its dtor disconnects from them): keep this order.
     std::vector<std::shared_ptr<message_filters::Subscriber<sensor_msgs::Image>>> sync_subs_cam_;
     std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
+
+    /// vslam map / dense / keyframe-debug output on its own callback queue and thread.
+    std::unique_ptr<MapVisualizer> map_viz_;
   };
 
 } // namespace vslam

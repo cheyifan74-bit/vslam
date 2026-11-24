@@ -7,6 +7,7 @@
 #define VSLAM_MAP_MANAGER_MAP_MANAGER_H
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -23,6 +24,7 @@
 #include "keyframe_select/keyframe.h"
 #include "keyframe_select/keyframe_queue.h"
 #include "map_manager/map.h"
+#include "visualization/map_viz_types.h"
 
 namespace colmap
 {
@@ -32,30 +34,7 @@ namespace colmap
 namespace vslam
 {
 
-  struct MapVizPoint {
-    Eigen::Vector3d position = Eigen::Vector3d::Zero();
-    std::uint64_t id = 0;
-    std::uint32_t observations = 0;
-  };
-
-  struct MapVizKeyframe {
-    std::uint32_t id = 0;
-    Eigen::Vector3d position = Eigen::Vector3d::Zero();
-    Eigen::Quaterniond orientation = Eigen::Quaterniond::Identity();
-  };
-
-  struct MapVizLoop {
-    std::uint32_t current_id = 0;
-    std::uint32_t candidate_id = 0;
-  };
-
-  struct MapVisualizationSnapshot {
-    std::uint32_t current_keyframe_id = 0;
-    std::vector<MapVizPoint> global_points;
-    std::vector<MapVizPoint> local_points;
-    std::vector<MapVizKeyframe> keyframes;
-    std::vector<MapVizLoop> confirmed_loops;
-  };
+  class ImageWriter;
 
   struct SiftExtractConfig
   {
@@ -71,6 +50,9 @@ namespace vslam
     int max_num_orientations = 2;
     bool upright = false;
     int max_image_size = -1;
+
+    /// Reads this struct's keys from vslam.yaml.
+    void load(ConfigReader &reader);
   };
 
   struct MatchConfig
@@ -95,6 +77,9 @@ namespace vslam
     int ransac_min_num_trials = 30;
     int ransac_max_num_trials = 500;
     double ransac_confidence = 0.99;
+
+    /// Reads this struct's keys from vslam.yaml.
+    void load(ConfigReader &reader);
   };
 
   struct MapperConfig
@@ -129,6 +114,7 @@ namespace vslam
     double ba_vio_prior_trans_sigma_m = 0.02;
     double ba_vio_prior_trans_sigma_ratio = 0.03;
     int ba_vio_prior_max_gap = 5;
+    double ba_vio_gravity_sigma_deg = 0.3;
     int ba_fixed_min_points = 0;
     int ba_loop_max_num_iterations = 50;
     /// Ceres threads for local / loop BA. <=0 uses all cores (hurts VIO).
@@ -146,6 +132,9 @@ namespace vslam
     int capacity_max_per_cell = 1;
     /// Delete culled / dropped keyframes from database.db and images/ on exit.
     bool compact_database_on_exit = false;
+
+    /// Reads this struct's keys from vslam.yaml.
+    void load(ConfigReader &reader);
   };
 
   struct LoopCloserConfig
@@ -199,6 +188,9 @@ namespace vslam
     int reloc_min_num_3d_correspondences = 40;
     int reloc_min_inliers = 80;
     double reloc_max_rot_vs_essential_deg = 3.0;
+
+    /// Reads this struct's keys from vslam.yaml.
+    void load(ConfigReader &reader);
   };
 
   struct MapManagerConfig
@@ -210,13 +202,18 @@ namespace vslam
     MapperConfig mapper;
     LoopCloserConfig loop;
     DenseConfig dense;
+
+    /// Reads every sub-config from vslam.yaml; cameras come from the estimator config.
+    void load(ConfigReader &reader);
   };
 
   /**
    * @brief Owns a Map session and consumes KeyframeQueue.
    *
    * Map owns directories + COLMAP database.
-   * MapManager saves images, WriteImage, then calls OnlineIncrementalMapper::Process.
+   * MapManager registers the image (WriteImage), hands the pixels straight to
+   * OnlineIncrementalMapper::Process and writes the image files on a
+   * background thread (ImageWriter).
    */
   class MapManager
   {
@@ -230,7 +227,8 @@ namespace vslam
     /// Create Map and initialize directories + database.
     bool createMap();
 
-    /// Save left image, register it in database.db, then Process() the mapper.
+    /// Register the keyframe in database.db, Process() it from memory and queue
+    /// the left (and right) image for writing to disk.
     bool addKeyframe(const Keyframe &keyframe);
 
     void startKeyframeConsumer(const std::shared_ptr<KeyframeQueue> &keyframe_queue);
@@ -248,8 +246,10 @@ namespace vslam
     void setDenseCloudCallback(DenseMapper::CloudCallback callback);
 
     /// Publish the current reconstruction (restored map + every processed
-    /// keyframe) to the visualization callback. No-op when no callback is set or
-    /// the map is still empty.
+    /// keyframe) to the visualization callback. No-op when no callback is set,
+    /// the map is still empty, or nothing changed since the last call and the
+    /// periodic refresh is not due yet. Meant to be driven by a timer on the
+    /// visualization thread; the keyframe consumer never publishes.
     void publishVisualization();
 
   private:
@@ -257,10 +257,6 @@ namespace vslam
     /// Next free image index parsed from the database image names, so a resumed
     /// session never reuses an existing name (and therefore an image_id).
     std::size_t nextFrameIndexFromDatabase(const Map &map) const;
-    MapVisualizationSnapshot makeVisualizationSnapshot(
-        const colmap::OnlineIncrementalMapper &mapper,
-        uint32_t current_image_id) const;
-    bool saveKeyframeImage(const Keyframe &keyframe, const std::string &abs_image_path) const;
     /// Open DB (path lock) → WriteImage → Close. Returns COLMAP image_id, or 0 on failure.
     uint32_t writeKeyframeImage(const Map &map,
                                 const Keyframe &keyframe,
@@ -281,9 +277,17 @@ namespace vslam
     /// Last image handed to the mapper, used as the "current" keyframe marker.
     /// Only touched while holding mapper_mutex_.
     uint32_t last_processed_image_id_ = 0;
+    /// Set after every Process(); only touched while holding mapper_mutex_.
+    bool viz_dirty_ = true;
+    /// Serializes publishVisualization() callers and guards last_viz_publish_.
+    std::mutex viz_publish_mutex_;
+    std::chrono::steady_clock::time_point last_viz_publish_{};
     std::function<void(const MapVisualizationSnapshot &)> visualization_callback_;
     std::unique_ptr<DenseMapper> dense_mapper_;
     DenseMapper::CloudCallback dense_cloud_callback_;
+    /// Nothing reads the files back during the session; they are for resume
+    /// and offline use.
+    std::unique_ptr<ImageWriter> image_writer_;
   };
 
 } // namespace vslam

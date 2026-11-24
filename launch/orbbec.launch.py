@@ -52,6 +52,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
+    SetEnvironmentVariable,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -80,10 +81,15 @@ def launch_setup(context):
     # low -> 功率 1, full/interleave -> 功率 6
     laser_level = 6 if laser in ("full", "high", "6", "on", "true") or laser_interleave else 1
 
+    # VIO 只用左右 IR + IMU; Color/D2C/点云 都在相机发布线程里算, 负载高时会拖住
+    # 同一 SDK 管线里的 IMU (实测 IMU 201Hz -> 113Hz, IR 30 -> 16fps, VIO 跑飞)
+    color_on = LaunchConfiguration("color").perform(context).strip().lower() in ("true", "1")
+    pointcloud = LaunchConfiguration("pointcloud").perform(context).strip().lower() in ("true", "1")
+
     cam_args = {
         "camera_name": LaunchConfiguration("camera_name"),
         # Color 640x480: 335L 硬件 D2C 支持的分辨率 (1280x720 只能软件 D2C)
-        "enable_color": LaunchConfiguration("color"),
+        "enable_color": "true" if color_on else "false",
         "color_width": "640",
         "color_height": "480",
         "color_fps": "30",
@@ -96,12 +102,12 @@ def launch_setup(context):
         # 激光/散斑: off=关, low=功率1, full=功率6, interleave=硬件交替开/关
         "enable_laser": "false" if laser_off else "true",
         "enable_ldp": "false" if laser_off else "true",
-        # 硬件 Depth→Color 对齐后, /camera/depth/image_raw 与 Color 像素对齐
-        "depth_registration": "true",
+        # 硬件 Depth→Color 对齐后, /camera/depth/image_raw 与 Color 像素对齐 (仅 color:=true 时)
+        "depth_registration": "true" if color_on else "false",
         "align_mode": "HW",
-        # HW D2C 后可发对齐到 Color 的点云, 便于 RViz 查看
-        "enable_point_cloud": "true",
-        "enable_colored_point_cloud": "true",
+        # 点云仅供 RViz 查看, 默认关; pointcloud:=true 打开 (有 Color 时发彩色点云)
+        "enable_point_cloud": "true" if pointcloud else "false",
+        "enable_colored_point_cloud": "true" if (pointcloud and color_on) else "false",
         "depth_width": "640",
         "depth_height": "480",
         "depth_fps": "30",
@@ -172,6 +178,17 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        # 相机 container 也用异步发布: Humble 默认同步发送, 大图发布慢时会阻塞 SDK 回调线程 (连带 IMU)
+        SetEnvironmentVariable("RMW_FASTRTPS_PUBLICATION_MODE", "ASYNCHRONOUS"),
+        # DDS 只走本机: 局域网里有其他 ROS2 设备 (domain 0), WiFi 掉线/漫游时 DDS 发送阻塞会卡住
+        # 相机发布线程, SDK 丢掉 IMU (实测 16:21:52 断 5.5s -> VIO 跑飞)。需要远程看时改 ROS_DOMAIN_ID
+        SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
+        # 后台 OpenMP 线程不要自旋空转等下一次并行区, 否则 dense/TSDF 反复启动时会偷走
+        # VIO 需要的 CPU。必须在进程启动前设置 (libgomp 只在初始化时读取)。
+        SetEnvironmentVariable("OMP_WAIT_POLICY", "PASSIVE"),
+        SetEnvironmentVariable("GOMP_SPINCOUNT", "0"),
+        SetEnvironmentVariable("OMP_NUM_THREADS", "2"),
+        SetEnvironmentVariable("OMP_PROC_BIND", "false"),
         DeclareLaunchArgument("config", default_value="orbbec"),
         DeclareLaunchArgument("camera_name", default_value="camera"),
         DeclareLaunchArgument("namespace", default_value="ov_msckf"),
@@ -180,8 +197,10 @@ def generate_launch_description():
         DeclareLaunchArgument("dovslam", default_value="true"),
         DeclareLaunchArgument("doviz", default_value="true"),
         DeclareLaunchArgument("rviz_config", default_value=""),
-        # 原始 RGB 是否发布 (不影响 VIO 用哪路)
-        DeclareLaunchArgument("color", default_value="true"),
+        # 原始 RGB 是否发布 (不影响 VIO 用哪路); 默认关, 给相机发布线程减负
+        DeclareLaunchArgument("color", default_value="false"),
+        # 相机点云 (仅 RViz 查看用)
+        DeclareLaunchArgument("pointcloud", default_value="false"),
         # 主动红外激光: off / low / full / interleave(硬件帧交错开/关)
         DeclareLaunchArgument("laser", default_value="off"),
         OpaqueFunction(function=launch_setup),

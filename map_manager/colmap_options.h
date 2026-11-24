@@ -1,5 +1,5 @@
 /*
- * @Description: vslam yaml DTOs → COLMAP online SfM options.
+ * @Description: vslam.yaml → mapping config DTOs → COLMAP online SfM options.
  * @Author: che yifan
  * @Date: 2026-09-10
  */
@@ -7,9 +7,9 @@
 #define VSLAM_MAP_MANAGER_COLMAP_OPTIONS_H
 
 #include "colmap/feature/extractor.h"
-#include "colmap/online_sfm/online_feature_matcher.h"
-#include "colmap/online_sfm/online_loop_closer.h"
-#include "colmap/online_sfm/online_mapper.h"
+#include "online_sfm/online_feature_matcher.h"
+#include "online_sfm/online_loop_closer.h"
+#include "online_sfm/online_mapper.h"
 #include "map_manager/map_manager.h"
 
 namespace vslam

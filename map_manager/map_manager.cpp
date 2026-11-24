@@ -11,33 +11,145 @@
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <unordered_set>
+#include <utility>
 
-#include <opencv2/imgcodecs.hpp>
+#include <opencv2/core.hpp>
 
 #include "colmap/geometry/rigid3.h"
 #include "colmap/scene/database_session.h"
 #include "colmap/scene/image.h"
 #include "colmap/scene/point3d.h"
 #include "colmap/scene/reconstruction.h"
-#include "colmap/online_sfm/online_incremental_mapper.h"
+#include "online_sfm/online_incremental_mapper.h"
+#include "colmap/sensor/bitmap.h"
 
 #include <Eigen/Core>
 #include "colmap/util/types.h"
 
 #include "dense_mapper/dense_mapper.h"
 #include "map_manager/colmap_options.h"
-#include "utility/math_utils.h"
+#include "map_manager/image_writer.h"
+#include "utility/config_reader.h"
+#include "visualization/map_snapshot.h"
 #include "utils/print.h"
 
 namespace vslam
 {
 
-  MapManager::MapManager(const MapManagerConfig &config) : config_(config) {}
+  namespace
+  {
+    /// Same pixels Bitmap::Read would produce from the saved file: grey stays
+    /// grey, BGR becomes RGB. Returns an empty bitmap for unsupported types.
+    colmap::Bitmap BitmapFromMat(const cv::Mat &image)
+    {
+      if (image.empty() || image.depth() != CV_8U ||
+          (image.channels() != 1 && image.channels() != 3))
+      {
+        return colmap::Bitmap();
+      }
+      const int channels = image.channels();
+      colmap::Bitmap bitmap(image.cols, image.rows, /*as_rgb=*/channels == 3);
+      uint8_t *dst = bitmap.RowMajorData().data();
+      const std::size_t row_bytes = static_cast<std::size_t>(image.cols) * channels;
+      for (int r = 0; r < image.rows; ++r)
+      {
+        const uint8_t *src = image.ptr<uint8_t>(r);
+        uint8_t *dst_row = dst + r * row_bytes;
+        if (channels == 1)
+        {
+          std::copy(src, src + row_bytes, dst_row);
+        }
+        else
+        {
+          for (int c = 0; c < image.cols; ++c)
+          {
+            dst_row[3 * c + 0] = src[3 * c + 2];
+            dst_row[3 * c + 1] = src[3 * c + 1];
+            dst_row[3 * c + 2] = src[3 * c + 0];
+          }
+        }
+      }
+      return bitmap;
+    }
+
+    /// Keyframe pose is left camera in global (world_from_cam). COLMAP uses cam_from_world.
+    colmap::Rigid3d vioCamFromWorld(const Pose3d &pose)
+    {
+      const colmap::Rigid3d world_from_cam(pose.orientation.normalized(), pose.position);
+      return colmap::Inverse(world_from_cam);
+    }
+
+    dense::Rigid RigidFromMappingPose(const colmap::MappingPose &pose)
+    {
+      dense::Rigid out;
+      out.q = Eigen::Quaterniond(pose.q_xyzw[3], pose.q_xyzw[0], pose.q_xyzw[1], pose.q_xyzw[2])
+                  .normalized();
+      out.t = Eigen::Vector3d(pose.t[0], pose.t[1], pose.t[2]);
+      return out;
+    }
+
+    dense::Rigid RigidFromRigid3d(const colmap::Rigid3d &pose)
+    {
+      dense::Rigid out;
+      out.q = pose.rotation().normalized();
+      out.t = pose.translation();
+      return out;
+    }
+
+    /// What DenseMapper::submit needs besides the images and removed ids.
+    struct DenseInput
+    {
+      dense::Rigid cam_from_world;
+      std::vector<Eigen::Vector3f> sparse_xyz;
+      std::vector<std::pair<uint32_t, dense::Rigid>> pose_updates;
+    };
+
+    /// Reads the reconstruction, so the caller must hold the mapper lock.
+    DenseInput CollectDenseInput(const colmap::Reconstruction &reconstruction,
+                                 const uint32_t image_id,
+                                 const colmap::MappingFrameResult &mapping_result,
+                                 const std::vector<uint32_t> &tracked_ids)
+    {
+      DenseInput input;
+      input.cam_from_world = RigidFromMappingPose(mapping_result.cam_from_world);
+      if (mapping_result.registered && reconstruction.ExistsImage(image_id))
+      {
+        for (const auto &point2D : reconstruction.Image(image_id).Points2D())
+        {
+          if (point2D.HasPoint3D() && reconstruction.ExistsPoint3D(point2D.point3D_id))
+          {
+            input.sparse_xyz.emplace_back(reconstruction.Point3D(point2D.point3D_id).xyz.cast<float>());
+          }
+        }
+      }
+      // Loop corrections plus the latest poses of recent keyframes, which
+      // local BA keeps refining after they were submitted.
+      input.pose_updates.reserve(mapping_result.dirty_poses.size() + tracked_ids.size());
+      for (const auto &item : mapping_result.dirty_poses)
+      {
+        input.pose_updates.emplace_back(item.first, RigidFromMappingPose(item.second));
+      }
+      for (const uint32_t id : tracked_ids)
+      {
+        if (reconstruction.ExistsImage(id) && reconstruction.Image(id).HasPose())
+        {
+          input.pose_updates.emplace_back(id, RigidFromRigid3d(reconstruction.Image(id).CamFromWorld()));
+        }
+      }
+      return input;
+    }
+  } // namespace
+
+  MapManager::MapManager(const MapManagerConfig &config)
+      : config_(config), image_writer_(std::make_unique<ImageWriter>())
+  {
+  }
 
   MapManager::~MapManager()
   {
     stopKeyframeConsumer();
+    // Finish the queued image files before compaction deletes culled ones.
+    image_writer_.reset();
     if (dense_mapper_)
     {
       dense_mapper_->stop();
@@ -214,32 +326,6 @@ namespace vslam
     return true;
   }
 
-  bool MapManager::saveKeyframeImage(const Keyframe &keyframe,
-                                     const std::string &abs_image_path) const
-  {
-    if (keyframe.image.empty())
-    {
-      PRINT_ERROR("[MAP_MANAGER]: Empty image for keyframe id=%llu\n",
-                  static_cast<unsigned long long>(keyframe.id));
-      return false;
-    }
-
-    try
-    {
-      if (!cv::imwrite(abs_image_path, keyframe.image))
-      {
-        PRINT_ERROR("[MAP_MANAGER]: cv::imwrite failed: %s\n", abs_image_path.c_str());
-        return false;
-      }
-    }
-    catch (const cv::Exception &e)
-    {
-      PRINT_ERROR("[MAP_MANAGER]: cv::imwrite exception: %s\n", e.what());
-      return false;
-    }
-    return true;
-  }
-
   uint32_t MapManager::writeKeyframeImage(const Map &map,
                                           const Keyframe &keyframe,
                                           const std::string &relative_name) const
@@ -306,20 +392,12 @@ namespace vslam
     const std::string abs_path = map->makeImageAbsPath(/*left=*/true, file_name);
     const std::string relative_name = map->makeImageRelativeName(/*left=*/true, file_name);
 
-    if (map->config().save_images)
+    colmap::Bitmap bitmap = BitmapFromMat(keyframe.image);
+    if (bitmap.IsEmpty())
     {
-      if (!saveKeyframeImage(keyframe, abs_path))
-      {
-        return false;
-      }
-      if (!keyframe.image_right.empty())
-      {
-        const std::string right_path = map->makeImageAbsPath(/*left=*/false, file_name);
-        if (!cv::imwrite(right_path, keyframe.image_right))
-        {
-          PRINT_WARNING("[MAP_MANAGER]: failed to save right image %s\n", right_path.c_str());
-        }
-      }
+      PRINT_ERROR("[MAP_MANAGER]: Unsupported or empty image for keyframe id=%llu (type=%d)\n",
+                  static_cast<unsigned long long>(keyframe.id), keyframe.image.type());
+      return false;
     }
 
     const uint32_t image_id = writeKeyframeImage(*map, keyframe, relative_name);
@@ -333,59 +411,43 @@ namespace vslam
       ++frame_count_;
     }
 
+    // The mapper works from memory; the files are only needed by later sessions.
+    image_writer_->enqueue(keyframe.image, abs_path);
+    if (!keyframe.image_right.empty())
+    {
+      image_writer_->enqueue(keyframe.image_right, map->makeImageAbsPath(/*left=*/false, file_name));
+    }
+
     const std::optional<colmap::Rigid3d> vio_prior = vioCamFromWorld(keyframe.pose);
     bool processed = false;
     colmap::MappingFrameResult mapping_result;
-    std::vector<Eigen::Vector3f> sparse_xyz;
-    std::vector<std::pair<uint32_t, colmap::MappingPose>> dense_poses;
+    DenseInput dense_input;
     {
       std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
-      processed = mapper->Process(image_id, abs_path, vio_prior, &mapping_result);
+      processed = mapper->Process(image_id, abs_path, std::move(bitmap), vio_prior, &mapping_result);
       last_processed_image_id_ = image_id;
+      viz_dirty_ = true;
       if (dense_mapper_)
       {
-        const colmap::Reconstruction &reconstruction = mapper->GetReconstruction();
-        if (mapping_result.registered && reconstruction.ExistsImage(image_id))
-        {
-          for (const auto &point2D : reconstruction.Image(image_id).Points2D())
-          {
-            if (point2D.HasPoint3D() && reconstruction.ExistsPoint3D(point2D.point3D_id))
-            {
-              sparse_xyz.emplace_back(
-                  reconstruction.Point3D(point2D.point3D_id).xyz.cast<float>());
-            }
-          }
-        }
-        // Loop corrections plus the latest poses of recent keyframes, which
-        // local BA keeps refining after they were submitted.
-        dense_poses.assign(mapping_result.dirty_poses.begin(), mapping_result.dirty_poses.end());
-        for (const uint32_t id : dense_mapper_->trackedIds())
-        {
-          if (reconstruction.ExistsImage(id) && reconstruction.Image(id).HasPose())
-          {
-            dense_poses.emplace_back(
-                id, colmap::PoseFromRigid3d(reconstruction.Image(id).CamFromWorld()));
-          }
-        }
+        dense_input = CollectDenseInput(mapper->GetReconstruction(), image_id, mapping_result,
+                                        dense_mapper_->trackedIds());
       }
     }
     if (dense_mapper_)
     {
       dense_mapper_->submit(image_id, mapping_result.registered, keyframe.image,
-                            keyframe.image_right, mapping_result.cam_from_world,
+                            keyframe.image_right, dense_input.cam_from_world,
                             mapping_result.removed_ids, mapping_result.redundant_ids,
-                            dense_poses, sparse_xyz);
+                            dense_input.pose_updates, dense_input.sparse_xyz);
     }
     if (!processed)
     {
       PRINT_WARNING("[MAP_MANAGER]: Process failed for image_id=%u (image is in DB)\n",
                     static_cast<unsigned>(image_id));
     }
-    // Publish for every keyframe, not only the successfully mapped ones: while a
-    // resumed session is still trying to relocalize, Process() returns true but
-    // adds nothing, and the restored map must stay visible (and keep being
-    // refreshed) until relocalization succeeds and incremental mapping resumes.
-    publishVisualization();
+    // Visualization is published by the wrapper's timer (viz_dirty_ marks the
+    // change). Publishing here made a backlog after a loop closure send one huge
+    // map message per queued keyframe, which starved the VIO publishers.
 
     PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s image_id=%u (total=%zu)\n",
                static_cast<unsigned long long>(keyframe.id),
@@ -446,73 +508,6 @@ namespace vslam
   const MapManagerConfig &MapManager::getConfig() const { return config_; }
 
 
-  MapVisualizationSnapshot MapManager::makeVisualizationSnapshot(
-      const colmap::OnlineIncrementalMapper &mapper,
-      uint32_t current_image_id) const
-  {
-    MapVisualizationSnapshot snapshot;
-    snapshot.current_keyframe_id = current_image_id;
-    const colmap::Reconstruction &reconstruction = mapper.GetReconstruction();
-    std::unordered_set<colmap::point3D_t> local_point_ids;
-    std::unordered_set<colmap::image_t> local_image_ids;
-    local_image_ids.insert(current_image_id);
-
-    if (reconstruction.ExistsImage(current_image_id) &&
-        reconstruction.Image(current_image_id).HasPose())
-    {
-      const auto &current = reconstruction.Image(current_image_id);
-      for (const auto &point2D : current.Points2D())
-      {
-        if (!point2D.HasPoint3D() || !reconstruction.ExistsPoint3D(point2D.point3D_id))
-          continue;
-        const auto &point = reconstruction.Point3D(point2D.point3D_id);
-        local_point_ids.insert(point2D.point3D_id);
-        for (const auto &track_element : point.track.Elements())
-          local_image_ids.insert(track_element.image_id);
-      }
-    }
-
-    for (const auto image_id : local_image_ids)
-    {
-      if (!reconstruction.ExistsImage(image_id))
-        continue;
-      const auto &image = reconstruction.Image(image_id);
-      for (const auto &point2D : image.Points2D())
-        if (point2D.HasPoint3D() && reconstruction.ExistsPoint3D(point2D.point3D_id))
-          local_point_ids.insert(point2D.point3D_id);
-    }
-
-    for (const auto image_id : reconstruction.RegImageIds())
-    {
-      const auto &image = reconstruction.Image(image_id);
-      if (!image.HasPose())
-        continue;
-      const colmap::Rigid3d world_from_cam = colmap::Inverse(image.CamFromWorld());
-      MapVizKeyframe keyframe;
-      keyframe.id = image_id;
-      keyframe.position = world_from_cam.translation();
-      keyframe.orientation = world_from_cam.rotation();
-      snapshot.keyframes.push_back(keyframe);
-    }
-
-    for (const auto point_id : reconstruction.Point3DIds())
-    {
-      const auto &point = reconstruction.Point3D(point_id);
-      MapVizPoint viz_point;
-      viz_point.position = point.xyz;
-      viz_point.id = point_id;
-      viz_point.observations = static_cast<std::uint32_t>(point.track.Length());
-      if (local_point_ids.count(point_id))
-        snapshot.local_points.push_back(viz_point);
-      else
-        snapshot.global_points.push_back(viz_point);
-    }
-
-    for (const auto &loop : mapper.ConfirmedLoops())
-      snapshot.confirmed_loops.push_back({loop.image_id1, loop.image_id2});
-    return snapshot;
-  }
-
   void MapManager::setVisualizationCallback(
       std::function<void(const MapVisualizationSnapshot &)> callback)
   {
@@ -549,15 +544,21 @@ namespace vslam
       return;
     }
 
+    std::lock_guard<std::mutex> publish_lock(viz_publish_mutex_);
+    // Unchanged maps are still re-sent now and then for late volatile subscribers (RViz default).
+    const auto now = std::chrono::steady_clock::now();
+    const bool refresh_due = now - last_viz_publish_ >= std::chrono::seconds(5);
+
     MapVisualizationSnapshot snapshot;
     {
       std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
-      if (!incremental_mapper_)
+      if (!incremental_mapper_ || (!viz_dirty_ && !refresh_due))
       {
         return;
       }
-      snapshot = makeVisualizationSnapshot(*incremental_mapper_,
-                                           last_processed_image_id_);
+      snapshot = MakeMapVisualizationSnapshot(*incremental_mapper_,
+                                              last_processed_image_id_);
+      viz_dirty_ = false;
     }
 
     // Do not publish an empty snapshot: its first marker is a DELETEALL, so it
@@ -568,6 +569,7 @@ namespace vslam
     {
       return;
     }
+    last_viz_publish_ = now;
     callback(snapshot);
   }
 
@@ -575,6 +577,17 @@ namespace vslam
   {
     std::lock_guard<std::mutex> lock(mutex_);
     return frame_count_;
+  }
+
+
+  void MapManagerConfig::load(ConfigReader &reader)
+  {
+    map.load(reader);
+    sift.load(reader);
+    match.load(reader);
+    mapper.load(reader);
+    loop.load(reader);
+    dense.load(reader);
   }
 
 } // namespace vslam

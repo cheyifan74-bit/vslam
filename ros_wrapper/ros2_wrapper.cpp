@@ -8,6 +8,9 @@
  */
 #include "ros2_wrapper.h"
 
+#include <cstdlib>
+#include <mutex>
+
 #include "app/application.h"
 #include "keyframe_select/keyframe_select.h"
 #include "utility/math_utils.h"
@@ -26,9 +29,6 @@
 #include <cv_bridge/cv_bridge.h>
 #endif
 #include <sensor_msgs/image_encodings.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <visualization_msgs/msg/marker.hpp>
-#include <std_msgs/msg/header.hpp>
 
 namespace vslam
 {
@@ -37,9 +37,24 @@ namespace vslam
   {
     double stampToSec(const builtin_interfaces::msg::Time &stamp) { return rclcpp::Time(stamp).seconds(); }
 
-    builtin_interfaces::msg::Time secToStamp(double t)
+    /// Left-camera pose in global for the current filter state, built from the
+    /// same IMU pose and cam0 extrinsics poseimu used to carry.
+    bool cameraPoseFromState(const ov_msckf::State &state, Pose3d &camera_pose)
     {
-      return rclcpp::Time(static_cast<int64_t>(t * 1e9), RCL_ROS_TIME);
+      const auto calib = state._calib_IMUtoCAM.find(0);
+      if (!state._imu || calib == state._calib_IMUtoCAM.end() || calib->second == nullptr)
+      {
+        return false;
+      }
+      // OpenVINS' JPL q_GtoI has the same coefficients as the Hamilton q_ItoG.
+      const Eigen::Vector4d q = state._imu->quat();
+      Pose3d imu_pose;
+      imu_pose.position = state._imu->pos();
+      imu_pose.orientation = Eigen::Quaterniond(q(3), q(0), q(1), q(2));
+      imu_pose.orientation.normalize();
+      // OpenVINS stores cam0 extrinsics as R_ItoC / p_IinC.
+      camera_pose = transformImuPoseToCameraPose(imu_pose, calib->second->Rot(), calib->second->pos());
+      return true;
     }
   } // namespace
 
@@ -50,6 +65,10 @@ namespace vslam
 
   RosWrapper::~RosWrapper()
   {
+    if (map_viz_)
+    {
+      map_viz_->stop();
+    }
     if (viz_)
     {
       viz_->visualize_final();
@@ -90,52 +109,12 @@ namespace vslam
 
     cb_group_imu_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     cb_group_cam_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    cb_group_pose_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-    pub_map_global_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("map_points_global", 1);
-    pub_map_local_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("map_points_local", 1);
-    pub_map_markers_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("map_visualization", 1);
-    pub_dense_cloud_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "dense_cloud", rclcpp::QoS(1).transient_local());
-    pub_dense_submaps_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
-        "dense_submaps", rclcpp::QoS(1).transient_local());
-    parser_->parse_config("dense_full_cloud_period_s", dense_full_cloud_period_s_, false);
-    if (auto map_manager = app_->getMapManager())
-    {
-      map_manager->setVisualizationCallback(
-          [this](const MapVisualizationSnapshot &snapshot) { publishMapVisualization(snapshot); });
-      // Updates between two timer ticks are merged: the newest snapshot holds
-      // every submap, the id sets say which markers must be re-sent.
-      map_manager->setDenseCloudCallback([this](std::shared_ptr<const DenseUpdate> update) {
-        std::lock_guard<std::mutex> lock(dense_cloud_mutex_);
-        for (const auto &submap : update->changed)
-        {
-          dense_changed_ids_.insert(submap->id);
-          dense_removed_ids_.erase(submap->id);
-        }
-        for (const uint32_t id : update->removed)
-        {
-          dense_removed_ids_.insert(id);
-          dense_changed_ids_.erase(id);
-        }
-        latest_dense_ = std::move(update);
-        dense_full_dirty_ = true;
-      });
-    }
+    map_viz_ = std::make_unique<MapVisualizer>(node_, app_->getMapVizConfig());
+    map_viz_->attachMapManager(app_->getMapManager());
 
-    // See map_viz_timer_: RViz joins late and its default QoS is volatile, so the
-    // initial snapshot of a resumed map would otherwise be dropped.
-    if (auto map_manager = app_->getMapManager())
-    {
-      map_viz_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [map_manager]() {
-        map_manager->publishVisualization();
-      });
-      dense_timer_ = node_->create_wall_timer(std::chrono::milliseconds(200),
-                                              [this]() { publishDenseCloud(); });
-    }
-
-    PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect topics...\n");
-    setupKeyframeSelectTopics();
+    PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect...\n");
+    setupKeyframeSelect();
 
     PRINT_INFO("[ROS_WRAPPER]: Setting up sensor subscribers...\n");
     setupSubscribers();
@@ -143,85 +122,26 @@ namespace vslam
     PRINT_INFO("[ROS_WRAPPER]: Initialization complete.\n");
   }
 
-  void RosWrapper::setupKeyframeSelectTopics()
+  void RosWrapper::setupKeyframeSelect()
   {
-    const KeyframeSelectConfig &kf_cfg = app_->getKeyframeSelectConfig();
-    kf_publish_debug_ = kf_cfg.publish_debug;
-
-    rclcpp::SubscriptionOptions options;
-    options.callback_group = cb_group_pose_;
-    sub_pose_ = node_->create_subscription<PoseMsg>(
-        kf_cfg.topic_pose, rclcpp::QoS(kf_cfg.pose_queue_size),
-        std::bind(&RosWrapper::callbackPose, this, std::placeholders::_1), options);
-    PRINT_INFO("[ROS_WRAPPER]: KeyframeSelect pose topic: %s\n", sub_pose_->get_topic_name());
-
-    if (kf_publish_debug_)
+    // Poses go straight from the filter to KeyframeSelect instead of through
+    // /ov_msckf/poseimu: no serialization, no drops (poseimu keeps only 2), and
+    // the stamp is the image time the state was updated at.
+    std::shared_ptr<KeyframeSelect> kf_select = app_->getKeyframeSelect();
+    if (kf_select)
     {
-      // Relative names resolve under the node namespace (/ov_msckf/... with the default launch).
-      pub_kf_pose_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>(kf_cfg.topic_keyframe_pose, 10);
-      pub_kf_image_ = node_->create_publisher<ImageMsg>(kf_cfg.topic_keyframe_image, 2);
-      PRINT_INFO("[ROS_WRAPPER]: KeyframeSelect debug pub: %s, %s\n", pub_kf_pose_->get_topic_name(),
-                 pub_kf_image_->get_topic_name());
-
-      // Debug publish runs on KeyframeSelect worker thread, not in sensor callbacks.
-      auto kf_select = app_->getKeyframeSelect();
-      if (kf_select)
-      {
-        kf_select->setKeyframeSelectedCallback([this](const Keyframe &kf) { publishKeyframeDebug(kf); });
-      }
-    }
-  }
-
-  Pose3d RosWrapper::poseFromMsg(const PoseMsg &msg)
-  {
-    Pose3d pose;
-    pose.position = Eigen::Vector3d(msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z);
-    pose.orientation = Eigen::Quaterniond(msg.pose.pose.orientation.w, msg.pose.pose.orientation.x,
-                                          msg.pose.pose.orientation.y, msg.pose.pose.orientation.z);
-    pose.orientation.normalize();
-    return pose;
-  }
-
-  bool RosWrapper::convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const
-  {
-    if (!app_ || !app_->getVioManager())
-    {
-      return false;
+      viz_->set_state_callback([kf_select](const ov_msckf::State &state) {
+        Pose3d camera_pose;
+        if (cameraPoseFromState(state, camera_pose))
+        {
+          // Only enqueues; selection runs on the KeyframeSelect worker thread.
+          kf_select->feedPose(state._timestamp, camera_pose, "global");
+        }
+      });
+      PRINT_INFO("[ROS_WRAPPER]: KeyframeSelect fed in-process from the VIO state\n");
     }
 
-    auto state = app_->getVioManager()->get_state();
-    if (!state || state->_calib_IMUtoCAM.find(0) == state->_calib_IMUtoCAM.end() ||
-        state->_calib_IMUtoCAM.at(0) == nullptr)
-    {
-      return false;
-    }
-
-    // OpenVINS stores cam0 extrinsics as R_ItoC / p_IinC.
-    const auto &calib_imu_to_cam0 = state->_calib_IMUtoCAM.at(0);
-    const Eigen::Matrix3d R_ItoC = calib_imu_to_cam0->Rot();
-    const Eigen::Vector3d p_IinC = calib_imu_to_cam0->pos();
-
-    const Pose3d imu_pose = poseFromMsg(pose_msg);
-    camera_pose = transformImuPoseToCameraPose(imu_pose, R_ItoC, p_IinC);
-    return true;
-  }
-
-  void RosWrapper::callbackPose(const PoseMsg::ConstSharedPtr pose_msg)
-  {
-    auto kf_select = app_->getKeyframeSelect();
-    if (!kf_select)
-    {
-      return;
-    }
-
-    Pose3d camera_pose;
-    if (!convertImuPoseMsgToCameraPose(*pose_msg, camera_pose))
-    {
-      return;
-    }
-
-    // Feed left-camera pose; selection runs on KeyframeSelect worker thread.
-    kf_select->feedPose(stampToSec(pose_msg->header.stamp), camera_pose, pose_msg->header.frame_id);
+    map_viz_->attachKeyframeSelect(app_->getKeyframeSelectConfig(), kf_select);
   }
 
   void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
@@ -237,273 +157,6 @@ namespace vslam
     kf_select->feedImage(timestamp, image, cam_id, image_right);
   }
 
-  void RosWrapper::publishKeyframeDebug(const Keyframe &kf)
-  {
-    geometry_msgs::msg::PoseStamped pose_msg;
-    pose_msg.header.stamp = secToStamp(kf.timestamp);
-    pose_msg.header.frame_id = kf.frame_id.empty() ? "global" : kf.frame_id;
-    pose_msg.pose.position.x = kf.pose.position.x();
-    pose_msg.pose.position.y = kf.pose.position.y();
-    pose_msg.pose.position.z = kf.pose.position.z();
-    pose_msg.pose.orientation.x = kf.pose.orientation.x();
-    pose_msg.pose.orientation.y = kf.pose.orientation.y();
-    pose_msg.pose.orientation.z = kf.pose.orientation.z();
-    pose_msg.pose.orientation.w = kf.pose.orientation.w();
-    pub_kf_pose_->publish(pose_msg);
-
-    if (!kf.image.empty() && pub_kf_image_->get_subscription_count() > 0)
-    {
-      std_msgs::msg::Header header = pose_msg.header;
-      header.frame_id = "cam0";
-      const std::string encoding = (kf.image.channels() == 1) ? "mono8" : "bgr8";
-      pub_kf_image_->publish(*cv_bridge::CvImage(header, encoding, kf.image).toImageMsg());
-    }
-  }
-
-  void RosWrapper::publishDenseCloud()
-  {
-    if (!pub_dense_cloud_ || !pub_dense_submaps_)
-    {
-      return;
-    }
-    std::shared_ptr<const DenseUpdate> latest;
-    std::unordered_set<uint32_t> changed;
-    std::unordered_set<uint32_t> removed;
-    bool full_dirty = false;
-    const auto now = std::chrono::steady_clock::now();
-    const bool full_due =
-        now - last_dense_full_build_ >= std::chrono::duration<double>(dense_full_cloud_period_s_);
-    {
-      std::lock_guard<std::mutex> lock(dense_cloud_mutex_);
-      latest = latest_dense_;
-      changed.swap(dense_changed_ids_);
-      removed.swap(dense_removed_ids_);
-      full_dirty = dense_full_dirty_ && full_due;
-      if (full_dirty)
-      {
-        dense_full_dirty_ = false;
-      }
-    }
-    if (!latest)
-    {
-      return;
-    }
-
-    // Transient-local keeps only the last array, so a new subscriber gets every submap once.
-    const size_t subscribers = pub_dense_submaps_->get_subscription_count();
-    const bool resend_all = subscribers > dense_submap_subscribers_;
-    dense_submap_subscribers_ = subscribers;
-    if (resend_all || !changed.empty() || !removed.empty())
-    {
-      visualization_msgs::msg::MarkerArray markers;
-      const rclcpp::Time stamp = node_->now();
-      for (const auto &submap : latest->submaps)
-      {
-        if (!resend_all && changed.count(submap->id) == 0)
-        {
-          continue;
-        }
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "global";
-        marker.header.stamp = stamp;
-        marker.ns = "dense_submaps";
-        marker.id = static_cast<int>(submap->id);
-        const DenseCloud &cloud = *submap->points;
-        if (cloud.xyz.empty())
-        {
-          marker.action = visualization_msgs::msg::Marker::DELETE;
-          markers.markers.push_back(std::move(marker));
-          continue;
-        }
-        marker.type = visualization_msgs::msg::Marker::POINTS;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.pose.orientation.x = submap->q_world_submap[0];
-        marker.pose.orientation.y = submap->q_world_submap[1];
-        marker.pose.orientation.z = submap->q_world_submap[2];
-        marker.pose.orientation.w = submap->q_world_submap[3];
-        marker.pose.position.x = submap->t_world_submap[0];
-        marker.pose.position.y = submap->t_world_submap[1];
-        marker.pose.position.z = submap->t_world_submap[2];
-        marker.scale.x = latest->point_size_m;
-        marker.scale.y = latest->point_size_m;
-        marker.color.a = 1.f;
-        marker.points.resize(cloud.xyz.size());
-        marker.colors.resize(cloud.xyz.size());
-        for (size_t i = 0; i < cloud.xyz.size(); ++i)
-        {
-          marker.points[i].x = cloud.xyz[i].x();
-          marker.points[i].y = cloud.xyz[i].y();
-          marker.points[i].z = cloud.xyz[i].z();
-          const size_t c = i * 3;
-          const bool has_rgb = c + 2 < cloud.rgb.size();
-          marker.colors[i].r = (has_rgb ? cloud.rgb[c] : 180) / 255.f;
-          marker.colors[i].g = (has_rgb ? cloud.rgb[c + 1] : 180) / 255.f;
-          marker.colors[i].b = (has_rgb ? cloud.rgb[c + 2] : 180) / 255.f;
-          marker.colors[i].a = 1.f;
-        }
-        markers.markers.push_back(std::move(marker));
-      }
-      for (const uint32_t id : removed)
-      {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "global";
-        marker.header.stamp = stamp;
-        marker.ns = "dense_submaps";
-        marker.id = static_cast<int>(id);
-        marker.action = visualization_msgs::msg::Marker::DELETE;
-        markers.markers.push_back(std::move(marker));
-      }
-      if (!markers.markers.empty())
-      {
-        pub_dense_submaps_->publish(markers);
-      }
-    }
-
-    if (full_dirty)
-    {
-      publishDenseFullCloud(*latest);
-      last_dense_publish_ = now;
-      last_dense_full_build_ = now;
-    }
-    else if (last_dense_msg_ && now - last_dense_publish_ >= std::chrono::seconds(5))
-    {
-      // Unchanged map: an occasional resend lets volatile late joiners (RViz default) see it.
-      last_dense_msg_->header.stamp = node_->now();
-      pub_dense_cloud_->publish(*last_dense_msg_);
-      last_dense_publish_ = now;
-    }
-  }
-
-  void RosWrapper::publishDenseFullCloud(const DenseUpdate &update)
-  {
-    size_t count = 0;
-    for (const auto &submap : update.submaps)
-    {
-      count += submap->points->xyz.size();
-    }
-    auto msg_ptr = std::make_shared<sensor_msgs::msg::PointCloud2>();
-    sensor_msgs::msg::PointCloud2 &msg = *msg_ptr;
-    msg.header.frame_id = "global";
-    msg.header.stamp = node_->now();
-    msg.height = 1;
-    msg.width = static_cast<uint32_t>(count);
-    msg.is_dense = true;
-    sensor_msgs::PointCloud2Modifier modifier(msg);
-    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
-    modifier.resize(count);
-    sensor_msgs::PointCloud2Iterator<float> x(msg, "x"), y(msg, "y"), z(msg, "z");
-    sensor_msgs::PointCloud2Iterator<uint32_t> rgb(msg, "rgb");
-    for (const auto &submap : update.submaps)
-    {
-      const Eigen::Quaternionf q(submap->q_world_submap[3], submap->q_world_submap[0],
-                                 submap->q_world_submap[1], submap->q_world_submap[2]);
-      const Eigen::Matrix3f R = q.normalized().toRotationMatrix();
-      const Eigen::Vector3f t(submap->t_world_submap[0], submap->t_world_submap[1],
-                              submap->t_world_submap[2]);
-      const DenseCloud &cloud = *submap->points;
-      for (size_t i = 0; i < cloud.xyz.size(); ++i)
-      {
-        const Eigen::Vector3f p = R * cloud.xyz[i] + t;
-        *x = p.x();
-        *y = p.y();
-        *z = p.z();
-        const size_t c = i * 3;
-        const uint8_t r = c + 2 < cloud.rgb.size() ? cloud.rgb[c] : 180;
-        const uint8_t g = c + 2 < cloud.rgb.size() ? cloud.rgb[c + 1] : 180;
-        const uint8_t b = c + 2 < cloud.rgb.size() ? cloud.rgb[c + 2] : 180;
-        *rgb = (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
-        ++x;
-        ++y;
-        ++z;
-        ++rgb;
-      }
-    }
-    pub_dense_cloud_->publish(msg);
-    last_dense_msg_ = std::move(msg_ptr);
-  }
-
-  void RosWrapper::publishMapVisualization(const MapVisualizationSnapshot &snapshot)
-  {
-    const auto make_cloud = [](const std::vector<MapVizPoint> &points, uint8_t r, uint8_t g, uint8_t b) {
-      sensor_msgs::msg::PointCloud2 cloud;
-      cloud.header.frame_id = "global";
-      cloud.height = 1;
-      cloud.width = static_cast<uint32_t>(points.size());
-      cloud.is_dense = true;
-      sensor_msgs::PointCloud2Modifier modifier(cloud);
-      modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
-      modifier.resize(points.size());
-      sensor_msgs::PointCloud2Iterator<float> x(cloud,"x"), y(cloud,"y"), z(cloud,"z");
-      sensor_msgs::PointCloud2Iterator<uint32_t> rgb(cloud,"rgb");
-      const uint32_t color = (static_cast<uint32_t>(r)<<16) | (static_cast<uint32_t>(g)<<8) | b;
-      for (const auto &point : points) {
-        *x=static_cast<float>(point.position.x()); *y=static_cast<float>(point.position.y());
-        *z=static_cast<float>(point.position.z()); *rgb=color; ++x; ++y; ++z; ++rgb;
-      }
-      return cloud;
-    };
-    const auto stamp = node_->now();
-    auto global_cloud = make_cloud(snapshot.global_points,255,255,255);
-    auto local_cloud = make_cloud(snapshot.local_points,255,0,0);
-    global_cloud.header.stamp = stamp; local_cloud.header.stamp = stamp;
-    pub_map_global_->publish(global_cloud); pub_map_local_->publish(local_cloud);
-
-    visualization_msgs::msg::MarkerArray array;
-    visualization_msgs::msg::Marker clear;
-    clear.header.frame_id="global"; clear.header.stamp=stamp; clear.ns="vslam_map"; clear.id=0;
-    clear.action=visualization_msgs::msg::Marker::DELETEALL; array.markers.push_back(clear);
-    std::vector<double> steps;
-    for (size_t i=1;i<snapshot.keyframes.size();++i) {
-      const double d=(snapshot.keyframes[i].position-snapshot.keyframes[i-1].position).norm();
-      if (std::isfinite(d)&&d>1e-4) steps.push_back(d);
-    }
-    double depth=0.25;
-    if (!steps.empty()) { auto middle=steps.begin()+steps.size()/2; std::nth_element(steps.begin(),middle,steps.end()); depth=std::clamp(*middle*0.30,0.12,1.5); }
-
-    visualization_msgs::msg::Marker positions; positions.header=clear.header; positions.ns="keyframes"; positions.id=1;
-    positions.type=visualization_msgs::msg::Marker::SPHERE_LIST; positions.action=visualization_msgs::msg::Marker::ADD;
-    positions.scale.x=positions.scale.y=positions.scale.z=depth*0.10;
-    positions.color.r=0.1; positions.color.g=0.8; positions.color.b=1.0; positions.color.a=1.0;
-    visualization_msgs::msg::Marker path=positions; path.ns="keyframe_path"; path.id=2; path.type=visualization_msgs::msg::Marker::LINE_STRIP; path.scale.x=depth*0.035;
-    visualization_msgs::msg::Marker frustums=positions; frustums.ns="keyframe_frustums"; frustums.id=3; frustums.type=visualization_msgs::msg::Marker::LINE_LIST; frustums.scale.x=depth*0.025;
-    visualization_msgs::msg::Marker loops=frustums; loops.ns="loop_edges"; loops.id=4; loops.scale.x=depth*0.04; loops.color.r=1.0; loops.color.g=0.1; loops.color.b=1.0;
-    const auto to_point=[](const Eigen::Vector3d &v) { geometry_msgs::msg::Point p; p.x=v.x(); p.y=v.y(); p.z=v.z(); return p; };
-    const auto add_segment=[&](visualization_msgs::msg::Marker &m,const Eigen::Vector3d &a,const Eigen::Vector3d &b) {
-      m.points.push_back(to_point(a)); m.points.push_back(to_point(b));
-    };
-    std::unordered_map<uint32_t,Eigen::Vector3d> positions_by_id;
-    const auto add_frustum=[&](visualization_msgs::msg::Marker &m,const MapVizKeyframe &kf) {
-      const Eigen::Quaterniond q=kf.orientation.normalized(); const double w=depth*0.65,h=depth*0.45;
-      const std::array<Eigen::Vector3d,4> c={Eigen::Vector3d(-w,-h,depth),Eigen::Vector3d(w,-h,depth),Eigen::Vector3d(w,h,depth),Eigen::Vector3d(-w,h,depth)};
-      std::array<Eigen::Vector3d,4> wc; for(size_t i=0;i<c.size();++i) wc[i]=kf.position+q*c[i];
-      for(size_t i=0;i<c.size();++i) { add_segment(m,kf.position,wc[i]); add_segment(m,wc[i],wc[(i+1)%c.size()]); }
-      add_segment(m,kf.position,kf.position+q*Eigen::Vector3d(0,0,depth*1.2));
-    };
-    for(const auto &kf:snapshot.keyframes) { positions.points.push_back(to_point(kf.position)); path.points.push_back(to_point(kf.position)); positions_by_id[kf.id]=kf.position; add_frustum(frustums,kf); }
-    for(const auto &loop:snapshot.confirmed_loops) if(positions_by_id.count(loop.current_id)&&positions_by_id.count(loop.candidate_id)) add_segment(loops,positions_by_id.at(loop.current_id),positions_by_id.at(loop.candidate_id));
-
-    visualization_msgs::msg::Marker current=positions; current.ns="current_keyframe"; current.id=5; current.scale.x=current.scale.y=current.scale.z=depth*0.24;
-    current.color.r=1.0; current.color.g=0.65; current.color.b=0.0; current.points.clear();
-    visualization_msgs::msg::Marker current_frustum=frustums; current_frustum.ns="current_frustum"; current_frustum.id=6; current_frustum.points.clear();
-    current_frustum.color.r=1.0; current_frustum.color.g=0.65; current_frustum.color.b=0.0;
-    visualization_msgs::msg::Marker axes; axes.header=clear.header; axes.ns="current_axes"; axes.action=visualization_msgs::msg::Marker::ADD;
-    axes.type=visualization_msgs::msg::Marker::LINE_LIST; axes.scale.x=depth*0.045;
-    auto current_it=std::find_if(snapshot.keyframes.begin(),snapshot.keyframes.end(),[&](const MapVizKeyframe &kf){return kf.id==snapshot.current_keyframe_id;});
-    if(current_it!=snapshot.keyframes.end()) {
-      const auto &kf=*current_it; current.points.push_back(to_point(kf.position)); add_frustum(current_frustum,kf);
-      const Eigen::Quaterniond q=kf.orientation.normalized(); const double len=depth*1.8;
-      visualization_msgs::msg::Marker xm=axes,ym=axes,zm=axes; xm.id=0; ym.id=1; zm.id=2;
-      xm.color.r=1; xm.color.a=1; ym.color.g=1; ym.color.a=1; zm.color.b=1; zm.color.a=1;
-      add_segment(xm,kf.position,kf.position+q*Eigen::Vector3d::UnitX()*len);
-      add_segment(ym,kf.position,kf.position+q*Eigen::Vector3d::UnitY()*len);
-      add_segment(zm,kf.position,kf.position+q*Eigen::Vector3d::UnitZ()*len);
-      array.markers.push_back(xm); array.markers.push_back(ym); array.markers.push_back(zm);
-    }
-    array.markers.push_back(positions); array.markers.push_back(path); array.markers.push_back(frustums);
-    array.markers.push_back(current_frustum); array.markers.push_back(loops); array.markers.push_back(current);
-    pub_map_markers_->publish(array);
-  }
-
   void RosWrapper::run()
   {
     if (!app_ || !app_->vioInitialized())
@@ -512,10 +165,20 @@ namespace vslam
       return;
     }
 
+    if (map_viz_)
+    {
+      map_viz_->start();
+    }
+
     PRINT_INFO("[ROS_WRAPPER]: Starting ROS2 multi-threaded executor...\n");
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(node_);
     executor.spin();
+
+    if (map_viz_)
+    {
+      map_viz_->stop();
+    }
   }
 
   void RosWrapper::setupSubscribers()
@@ -676,6 +339,10 @@ namespace vslam
 
 int main(int argc, char **argv)
 {
+  // Humble's rmw_fastrtps defaults to synchronous sends, which serialize every publisher of the
+  // process on one participant lock; asynchronous mode hands large samples to a writer thread.
+  // An explicit value in the environment still wins.
+  setenv("RMW_FASTRTPS_PUBLICATION_MODE", "ASYNCHRONOUS", 0);
   rclcpp::init(argc, argv);
 
   // YamlParser reads overrides via get_parameter(), so accept any parameter passed in.

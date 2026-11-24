@@ -74,7 +74,7 @@ Visualization Manager:
       Min Value: 0
       Name: Image Tracks
       Normalize Range: true
-      Queue Size: 10
+      Queue Size: 1
       Topic: /ov_msckf/trackhist
       Unreliable: false
       Value: true
@@ -85,7 +85,7 @@ Visualization Manager:
       Min Value: 0
       Name: Current Depths
       Normalize Range: true
-      Queue Size: 10
+      Queue Size: 1
       Topic: /ov_msckf/loop_depth_colored
       Unreliable: false
       Value: false
@@ -330,7 +330,7 @@ Visualization Manager:
       Class: rviz_default_plugins/PointCloud2
       Color Transformer: RGB8
       Decay Time: 0
-      Enabled: false
+      Enabled: true
       Name: VSLAM Dense Map (full)
       Position Transformer: XYZ
       Queue Size: 2
@@ -341,15 +341,15 @@ Visualization Manager:
       Topic: /ov_msckf/dense_cloud
       Unreliable: false
       Use Fixed Frame: true
-      Value: false
+      Value: true
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
+      Enabled: false
       Marker Topic: /ov_msckf/dense_submaps
       Name: VSLAM Dense Submaps
       Namespaces:
         dense_submaps: true
       Queue Size: 100
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Marker Topic: /ov_msckf/map_visualization

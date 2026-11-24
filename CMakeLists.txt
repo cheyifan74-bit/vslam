@@ -6,7 +6,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g3 -Wall")
+# NOTE: -g3 does not change runtime speed, it only bloats binaries. Enable with -DENABLE_DEBUG_SYMBOLS=ON for gdb.
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall")
+option(ENABLE_DEBUG_SYMBOLS "Compile with -g3 for gdb" OFF)
+if (ENABLE_DEBUG_SYMBOLS)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3")
+endif ()
+
+# Compile for the machine that builds the code (AVX2/FMA/BMI2 on this Alder Lake CPU).
+# Turn off (-DENABLE_NATIVE_OPT=OFF) if the binary has to run on an older CPU.
+option(ENABLE_NATIVE_OPT "Compile with -march=native/-mtune=native" ON)
+if (ENABLE_NATIVE_OPT)
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag("-march=native" HAS_MARCH_NATIVE)
+  if (HAS_MARCH_NATIVE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -mtune=native")
+  endif ()
+endif ()
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -160,13 +176,7 @@ add_compile_definitions(BOOST_BIND_GLOBAL_PLACEHOLDERS)
 add_subdirectory(colmap EXCLUDE_FROM_ALL)
 
 add_subdirectory(mixvpr)
-# Prefer inject over linking vslam_mixvpr into colmap_online_sfm (EXPORT).
-if(TARGET colmap_online_sfm AND TARGET vslam_mixvpr)
-  target_include_directories(colmap_online_sfm PRIVATE
-    $<TARGET_PROPERTY:vslam_mixvpr,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_compile_definitions(colmap_online_sfm PRIVATE
-    $<TARGET_PROPERTY:vslam_mixvpr,INTERFACE_COMPILE_DEFINITIONS>)
-endif()
+add_subdirectory(online_sfm)
 
 # Shrink PoseLib/faiss objects (-g3 from parent flags is huge).
 if(TARGET PoseLib)
@@ -201,9 +211,21 @@ if(VSLAM_ROS_VERSION EQUAL 1)
     INCLUDE_DIRS
       .
   )
-  set(VSLAM_ROS_WRAPPER_SRC ros_wrapper/ros_wrapper.cpp)
+  set(VSLAM_ROS_WRAPPER_SRC
+    ros_wrapper/ros_wrapper.cpp
+    visualization/ros1/viz_node.cpp
+    visualization/ros1/msg_builders.cpp
+    visualization/ros1/dense_visualizer.cpp
+    visualization/ros1/map_visualizer.cpp
+  )
 else()
-  set(VSLAM_ROS_WRAPPER_SRC ros_wrapper/ros2_wrapper.cpp)
+  set(VSLAM_ROS_WRAPPER_SRC
+    ros_wrapper/ros2_wrapper.cpp
+    visualization/ros2/viz_node.cpp
+    visualization/ros2/msg_builders.cpp
+    visualization/ros2/dense_visualizer.cpp
+    visualization/ros2/map_visualizer.cpp
+  )
 endif()
 
 include_directories(
@@ -223,6 +245,39 @@ if(NOT VSLAM_NVINFER)
   message(FATAL_ERROR "libnvinfer not found; TensorRT is required for dense mapping")
 endif()
 
+find_package(OpenMP)
+
+# Dense mapping: stereo depth (S²M²) fused into TSDF submaps.
+add_library(vslam_dense STATIC
+  dense_mapper/stereo_rectifier.cpp
+  dense_mapper/s2m2_engine.cpp
+  dense_mapper/depth_estimator.cpp
+  dense_mapper/frame_store.cpp
+  dense_mapper/submap.cpp
+  dense_mapper/tsdf_integrator.cpp
+  dense_mapper/surface_extractor.cpp
+  dense_mapper/snapshot_store.cpp
+  dense_mapper/dense_map.cpp
+  dense_mapper/dense_map_rebuild.cpp
+  dense_mapper/dense_map_publish.cpp
+  dense_mapper/dense_map_storage.cpp
+  dense_mapper/dense_mapper.cpp
+)
+if(VSLAM_ROS_VERSION EQUAL 1)
+  target_link_libraries(vslam_dense ov_core_lib)
+else()
+  ament_target_dependencies(vslam_dense ov_core)
+endif()
+target_link_libraries(vslam_dense
+  colmap
+  ${OpenCV_LIBRARIES}
+  CUDA::cudart
+  ${VSLAM_NVINFER}
+)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(vslam_dense OpenMP::OpenMP_CXX)
+endif()
+
 add_executable(vslam_node
   app/application.cpp
   ${VSLAM_ROS_WRAPPER_SRC}
@@ -230,11 +285,11 @@ add_executable(vslam_node
   keyframe_select/keyframe_select.cpp
   map_manager/map.cpp
   map_manager/map_manager.cpp
+  map_manager/image_writer.cpp
   map_manager/colmap_options.cpp
   utility/math_utils.cpp
-  dense_mapper/stereo_rectifier.cpp
-  dense_mapper/s2m2_engine.cpp
-  dense_mapper/dense_mapper.cpp
+  utility/config_reader.cpp
+  visualization/map_snapshot.cpp
 )
 
 if(VSLAM_ROS_VERSION EQUAL 1)
@@ -243,6 +298,7 @@ else()
   ament_target_dependencies(vslam_node ${VSLAM_AMENT_DEPS})
 endif()
 target_link_libraries(vslam_node
+  vslam_dense
   colmap
   ${OpenCV_LIBRARIES}
   ${Boost_LIBRARIES}
@@ -250,20 +306,11 @@ target_link_libraries(vslam_node
   ${VSLAM_NVINFER}
 )
 
-find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
   target_link_libraries(vslam_node OpenMP::OpenMP_CXX)
 endif()
-# Keep vslam_mixvpr against --as-needed (online_sfm needs MixVPR symbols).
-# vslam_mixvpr is static: it must follow colmap_online_sfm on the link line, otherwise the
-# linker has nothing unresolved yet when it scans the archive and drops it.
-if(TARGET vslam_mixvpr)
-  target_link_libraries(vslam_node
-    -Wl,--no-as-needed
-    colmap_online_sfm
-    vslam_mixvpr
-    -Wl,--as-needed)
-endif()
+# vslam_online_sfm links vslam_mixvpr itself, so CMake keeps the static archives in order.
+target_link_libraries(vslam_node vslam_online_sfm)
 
 # Prefer FetchContent ORT 1.27.1 over /usr/local (DT_RPATH beats LD_LIBRARY_PATH).
 if(DEFINED onnxruntime_LIBRARY_DIR_HINTS AND onnxruntime_LIBRARY_DIR_HINTS

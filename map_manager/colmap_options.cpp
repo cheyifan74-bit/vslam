@@ -1,5 +1,5 @@
 /*
- * @Description: vslam yaml DTOs → COLMAP online SfM options.
+ * @Description: vslam.yaml → mapping config DTOs → COLMAP online SfM options.
  * @Author: che yifan
  * @Date: 2026-09-10
  */
@@ -8,6 +8,7 @@
 #include "colmap/feature/matcher.h"
 #include "colmap/feature/sift.h"
 
+#include "utility/config_reader.h"
 namespace vslam
 {
 
@@ -96,6 +97,7 @@ namespace vslam
     options.ba_vio_prior_trans_sigma_m = cfg.ba_vio_prior_trans_sigma_m;
     options.ba_vio_prior_trans_sigma_ratio = cfg.ba_vio_prior_trans_sigma_ratio;
     options.ba_vio_prior_max_gap = cfg.ba_vio_prior_max_gap;
+    options.ba_vio_gravity_sigma_deg = cfg.ba_vio_gravity_sigma_deg;
     options.ba_fixed_min_points = cfg.ba_fixed_min_points;
     options.ba_loop_max_num_iterations = cfg.ba_loop_max_num_iterations;
     options.ba_num_threads = cfg.ba_num_threads;
@@ -166,6 +168,147 @@ namespace vslam
     options.reloc_min_inliers = cfg.reloc_min_inliers;
     options.reloc_max_rot_vs_essential_deg = cfg.reloc_max_rot_vs_essential_deg;
     return options;
+  }
+
+
+  void SiftExtractConfig::load(ConfigReader &reader)
+  {
+    reader.read("sift_use_gpu", use_gpu);
+    reader.read("sift_gpu_index", gpu_index);
+    reader.read("sift_max_num_features", max_num_features);
+    reader.read("sift_first_octave", first_octave);
+    reader.read("sift_num_octaves", num_octaves);
+    reader.read("sift_octave_resolution", octave_resolution);
+    reader.read("sift_peak_threshold", peak_threshold);
+    reader.read("sift_edge_threshold", edge_threshold);
+    reader.read("sift_estimate_affine_shape", estimate_affine_shape);
+    reader.read("sift_max_num_orientations", max_num_orientations);
+    reader.read("sift_upright", upright);
+    reader.read("sift_max_image_size", max_image_size);
+  }
+
+  void MatchConfig::load(ConfigReader &reader)
+  {
+    reader.read("match_use_gpu", use_gpu);
+    reader.read("match_gpu_index", gpu_index);
+    reader.read("match_overlap", overlap);
+    reader.read("match_spatial_max_distance", spatial_max_distance);
+    reader.read("match_spatial_max_angle_deg", spatial_max_angle_deg);
+    reader.read("match_spatial_max_num_images", spatial_max_num_images);
+    reader.read("match_num_threads", num_threads);
+    reader.read("match_max_num_matches", max_num_matches);
+    reader.read("sift_match_max_ratio", max_ratio);
+    reader.read("sift_match_max_distance", max_distance);
+    reader.read("sift_match_cross_check", cross_check);
+    reader.read("match_cpu_brute_force", cpu_brute_force_matcher);
+    reader.read("match_min_num_inliers", min_num_inliers);
+    reader.read("match_max_error", max_error);
+    reader.read("match_tvg_e_only", e_only);
+    reader.read("match_detect_watermark", detect_watermark);
+    reader.read("match_use_degensac", use_degensac);
+    reader.read("match_ransac_min_num_trials", ransac_min_num_trials);
+    reader.read("match_ransac_max_num_trials", ransac_max_num_trials);
+    reader.read("match_ransac_confidence", ransac_confidence);
+  }
+
+  void MapperConfig::load(ConfigReader &reader)
+  {
+    reader.read("mapper_min_num_inliers", min_num_inliers);
+    reader.read("mapper_abs_pose_min_num_inliers", abs_pose_min_num_inliers);
+    reader.read("mapper_abs_pose_max_error", abs_pose_max_error);
+    reader.read("mapper_abs_pose_min_inlier_ratio", abs_pose_min_inlier_ratio);
+    reader.read("mapper_ba_local_num_images", ba_local_num_images);
+    reader.read("mapper_ba_min_covisibility_points", ba_min_covisibility_points);
+    reader.read("mapper_filter_max_reproj_error", filter_max_reproj_error);
+    reader.read("mapper_filter_min_tri_angle", filter_min_tri_angle);
+    reader.read("mapper_filter_two_view_min_tri_angle", filter_two_view_min_tri_angle);
+    reader.read("mapper_tri_max_transitivity", tri_max_transitivity);
+    reader.read("mapper_tri_create_max_angle_error", tri_create_max_angle_error);
+    reader.read("mapper_tri_continue_max_angle_error", tri_continue_max_angle_error);
+    reader.read("mapper_tri_merge_max_reproj_error", tri_merge_max_reproj_error);
+    reader.read("mapper_tri_complete_max_reproj_error", tri_complete_max_reproj_error);
+    reader.read("mapper_tri_complete_max_transitivity", tri_complete_max_transitivity);
+    reader.read("mapper_tri_min_angle", tri_min_angle);
+    reader.read("mapper_tri_ignore_two_view_tracks", tri_ignore_two_view_tracks);
+    reader.read("mapper_local_map_num_images", local_map_num_images);
+    reader.read("mapper_local_map_search_radius_px", local_map_search_radius_px);
+    reader.read("mapper_local_map_refine_radius_px", local_map_refine_radius_px);
+    reader.read("mapper_local_map_max_desc_distance", local_map_max_desc_distance);
+    reader.read("mapper_local_map_max_ratio", local_map_max_ratio);
+    reader.read("mapper_scale_check_max_ratio", scale_check_max_ratio);
+    reader.read("mapper_local_map_spatial_num_images", local_map_spatial_num_images);
+    reader.read("mapper_local_map_spatial_max_distance_m", local_map_spatial_max_distance_m);
+    reader.read("mapper_local_map_spatial_max_angle_deg", local_map_spatial_max_angle_deg);
+    reader.read("mapper_ba_vio_prior_rot_sigma_deg", ba_vio_prior_rot_sigma_deg);
+    reader.read("mapper_ba_vio_prior_trans_sigma_m", ba_vio_prior_trans_sigma_m);
+    reader.read("mapper_ba_vio_prior_trans_sigma_ratio", ba_vio_prior_trans_sigma_ratio);
+    reader.read("mapper_ba_vio_prior_max_gap", ba_vio_prior_max_gap);
+    reader.read("mapper_ba_vio_gravity_sigma_deg", ba_vio_gravity_sigma_deg);
+    reader.read("mapper_ba_fixed_min_points", ba_fixed_min_points);
+    reader.read("mapper_ba_loop_max_num_iterations", ba_loop_max_num_iterations);
+    reader.read("mapper_ba_num_threads", ba_num_threads);
+    reader.read("mapper_ba_loop_pose_prior_rot_sigma_deg", ba_loop_pose_prior_rot_sigma_deg);
+    reader.read("mapper_ba_loop_pose_prior_trans_sigma_m", ba_loop_pose_prior_trans_sigma_m);
+    reader.read("mapper_ba_loop_min_point_track_length", ba_loop_min_point_track_length);
+    reader.read("mapper_ba_loop_min_point_tri_angle_deg", ba_loop_min_point_tri_angle_deg);
+    reader.read("mapper_ba_min_window_images", ba_min_window_images);
+    reader.read("mapper_ba_temporal_window_images", ba_temporal_window_images);
+    reader.read("mapper_sparse_write_every_n", sparse_write_every_n);
+    reader.read("mapper_capacity_enabled", capacity_enabled);
+    reader.read("mapper_capacity_voxel_m", capacity_voxel_m);
+    reader.read("mapper_capacity_view_angle_deg", capacity_view_angle_deg);
+    reader.read("mapper_capacity_max_per_cell", capacity_max_per_cell);
+    reader.read("map_compact_database_on_exit", compact_database_on_exit);
+  }
+
+  void LoopCloserConfig::load(ConfigReader &reader)
+  {
+    reader.read("loop_enabled", enabled);
+    reader.read("loop_mixvpr_engine_path", mixvpr_engine_path);
+    reader.read("loop_mixvpr_use_gpu", mixvpr_use_gpu);
+    reader.read("loop_mixvpr_gpu_index", mixvpr_gpu_index);
+    reader.read("loop_cooldown_num_images", cooldown_num_images);
+    reader.read("loop_min_frame_gap", min_frame_gap);
+    reader.read("loop_max_distance", max_distance);
+    reader.read("loop_max_view_angle_deg", max_view_angle_deg);
+    reader.read("loop_min_mixvpr_score", min_mixvpr_score);
+    reader.read("loop_topk", topk);
+    reader.read("loop_min_covisibility_points", min_covisibility_points);
+    reader.read("loop_min_candidate_points", min_candidate_points);
+    reader.read("loop_min_num_matches", min_num_matches);
+    reader.read("loop_min_num_verified_matches", min_num_verified_matches);
+    reader.read("loop_min_num_3d_correspondences", min_num_3d_correspondences);
+    reader.read("loop_min_num_3d_inliers", min_num_3d_inliers);
+    reader.read("loop_correct_local", correct_local);
+    reader.read("loop_max_correct_connected", max_correct_connected);
+    reader.read("loop_pnp_max_error", pnp_max_error);
+    reader.read("loop_guided_radius_px", guided_radius_px);
+    reader.read("loop_scale_check_max_ratio", scale_check_max_ratio);
+    reader.read("loop_island_2d3d", island_2d3d);
+    reader.read("loop_island_epipolar_px", island_epipolar_px);
+    reader.read("loop_max_rot_vs_essential_deg", max_rot_vs_essential_deg);
+    reader.read("loop_max_correction_m", max_correction_m);
+    reader.read("loop_max_correction_deg", max_correction_deg);
+    reader.read("loop_pose_graph_min_covis", pose_graph_min_covis);
+    reader.read("loop_pose_graph_4dof", pose_graph_4dof);
+    reader.read("loop_pose_graph_vio_odometry", pose_graph_vio_odometry);
+    reader.read("loop_pose_graph_odom_rot_sigma_deg", pose_graph_odom_rot_sigma_deg);
+    reader.read("loop_pose_graph_odom_trans_sigma_m", pose_graph_odom_trans_sigma_m);
+    reader.read("loop_pose_graph_odom_trans_sigma_ratio", pose_graph_odom_trans_sigma_ratio);
+    reader.read("loop_pose_graph_loop_min_rot_sigma_deg", pose_graph_loop_min_rot_sigma_deg);
+    reader.read("loop_pose_graph_loop_min_trans_sigma_m", pose_graph_loop_min_trans_sigma_m);
+    reader.read("loop_pose_graph_num_threads", pose_graph_num_threads);
+    reader.read("loop_rover_enabled", rover_enabled);
+    reader.read("loop_rover_min_threshold_m", rover_min_threshold_m);
+    reader.read("loop_rover_threshold_ratio", rover_threshold_ratio);
+    reader.read("loop_fuse_radius_px", fuse_radius_px);
+    reader.read("loop_fuse_max_point_distance", fuse_max_point_distance);
+    reader.read("loop_reloc_topk", reloc_topk);
+    reader.read("loop_reloc_min_mixvpr_score", reloc_min_mixvpr_score);
+    reader.read("loop_reloc_min_num_matches", reloc_min_num_matches);
+    reader.read("loop_reloc_min_num_3d_correspondences", reloc_min_num_3d_correspondences);
+    reader.read("loop_reloc_min_inliers", reloc_min_inliers);
+    reader.read("loop_reloc_max_rot_vs_essential_deg", reloc_max_rot_vs_essential_deg);
   }
 
 } // namespace vslam

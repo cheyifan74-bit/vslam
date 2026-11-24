@@ -16,6 +16,7 @@
 #include "colmap/scene/database_session.h"
 #include "colmap/sensor/models.h"
 
+#include "utility/config_reader.h"
 #include "utils/print.h"
 
 namespace fs = boost::filesystem;
@@ -140,6 +141,13 @@ namespace vslam
       {
         fs::remove_all(sparse_dir_);
         PRINT_INFO("[MAP]: Removed old sparse dir\n");
+      }
+      // Dense depth frames and TSDF submaps belong to the old image ids.
+      const fs::path dense_dir = fs::path(map_dir_) / "dense";
+      if (fs::exists(dense_dir))
+      {
+        fs::remove_all(dense_dir);
+        PRINT_INFO("[MAP]: Removed old dense dir\n");
       }
     }
     catch (const fs::filesystem_error &e)
@@ -279,6 +287,15 @@ namespace vslam
   std::string Map::makeImageRelativeName(bool left, const std::string &file_name) const
   {
     return std::string(left ? "left_image/" : "right_image/") + file_name;
+  }
+
+
+  void MapConfig::load(ConfigReader &reader)
+  {
+    reader.read("map_root_dir", map_root_dir);
+    reader.read("map_clear_old_session", clear_old_session);
+    reader.read("map_resume_existing", resume_existing);
+    reader.read("map_image_extension", image_extension);
   }
 
 } // namespace vslam

@@ -20,15 +20,11 @@ kf_sync_slop: 0.02           # seconds; max |t_image - t_pose| to pair
 # Internal buffers
 kf_pose_queue_size: 5000
 kf_image_queue_size: 1000
+kf_image_max_age_s: 3.0       # seconds; drop buffered images older than newest - this (bounds memory before VIO init)
 kf_output_queue_size: 2000     # downstream KeyframeQueue capacity (drop oldest if full)
 
-# Topics
-kf_topic_pose: "/ov_msckf/poseimu"
-kf_topic_keyframe_pose: "keyframe_pose"
-kf_topic_keyframe_image: "keyframe_image"
-
-# Publish selected keyframe pose/image for debugging / rosbag analysis
-kf_publish_debug: true
+# Input pose topic
+kf_topic_pose: "/ov_msckf/poseimu"   # ROS1 only; ROS2 feeds poses from the VIO state in-process
 
 # ------------------------------------------------------------------
 # Map / MapManager
@@ -41,7 +37,6 @@ map_clear_old_session: false
 # Load the previous session (sparse + database) and relocalize into it
 # instead of starting over. Takes precedence over clear_old_session.
 map_resume_existing: true
-map_save_images: true
 map_image_extension: "png"
 
 # ------------------------------------------------------------------
@@ -122,6 +117,7 @@ mapper_ba_vio_prior_rot_sigma_deg: 1.0     # <=0 disables
 mapper_ba_vio_prior_trans_sigma_m: 0.02
 mapper_ba_vio_prior_trans_sigma_ratio: 0.03  # sigma grows with the VIO step length
 mapper_ba_vio_prior_max_gap: 5             # only KFs at most this many ids apart
+mapper_ba_vio_gravity_sigma_deg: 0.3         # local / loop BA: roll+pitch tied to the VIO gravity; <=0 disables
 mapper_ba_fixed_min_points: 30          # LBA gauge = oldest window KF with >= this many 3D points; 0 = oldest
 mapper_ba_loop_max_num_iterations: 50      # loop BA over the corrected chain (local BA uses 10)
 mapper_ba_num_threads: 2                   # Ceres threads for local/loop BA; <=0 = all cores (hurts VIO)
@@ -208,7 +204,7 @@ dense_max_range_m: 4.0
 dense_min_confidence: 0.5
 dense_min_visible: 0.5
 dense_weight_reference_range_m: 2.0
-dense_saturate_gray: 0.0
+dense_saturate_gray: 0
 dense_sparse_depth_ratio: 1.25
 dense_sparse_depth_margin_m: 0.4
 dense_sparse_dilate_px: 12
@@ -225,9 +221,31 @@ dense_carve_weight: 1.0          # fraction of the max voxel weight removed by o
 dense_surface_min_weight: 0.5    # voxels below this weight are not extracted
 dense_edge_ratio: 0.08           # drop pixels whose 4-neighbour depth jumps by this share; 0 disables
 dense_replay_max_defer_jobs: 5   # batch block rebuilds over at most this many keyframes
-dense_rebuild_redundant_removals: true  # culled / capacity-evicted keyframes keep their depth in the volume
+dense_rebuild_redundant_removals: true  # false = grid-replaced keyframes keep their depth in the volume (newer passes carve changes), true = their blocks are rebuilt without them
 dense_resident_frames: 30        # depth of only the newest N fused keyframes stays in RAM; <=0 keeps all
 dense_publish_period_s: 1.0
+dense_snapshot_period_s: 30.0       # save TSDF submaps (and on stop) so a resumed map loads them instead of re-fusing; <=0: stop only
+dense_stats_period_s: 10.0          # log volume stats (empty blocks, occupancy, points/block) with a publish; <=0 off
+dense_integrate_pixel_stride: 4      # one candidate-block ray per NxN pixels (auto-capped at far depth); voxels still use every pixel
+dense_free_empty_blocks: true        # free blocks whose voxels all lost weight (a tombstone keeps older frames out)
+dense_skip_similar_trans_m: 0.10     # skip S2M2 for a keyframe within both thresholds of one of the last 8 inferred; <=0 off
+dense_skip_similar_rot_deg: 5.0
+dense_max_queue_frames: 30           # max keyframe images waiting for S2M2 (oldest dropped) / depths waiting for fusion; <=0 unlimited
+dense_freeze_idle_s: 30.0           # submaps unused this long (not the active one) keep only their surface in RAM, voxels go to the snapshot file; <=0 off
+dense_replay_budget_ms: 20.0         # fusion-thread time per job for a submap rebuild (loop correction); the rest continues later; <=0 a whole submap at once
+dense_replace_sdf_diff: 0.5          # near-surface voxel whose sdf flips sign and differs by more than this (truncation units) is replaced, not averaged; <=0 off
+dense_replace_min_conf: 0.5          # minimum depth confidence (0..1) for a replacement
+dense_replace_weight: 2.0            # weight a replaced voxel restarts with; only voxels above it are replaced
 dense_submap_max_frames: 40       # keyframes per TSDF submap; a loop moves submaps rigidly, <=0: one volume
 dense_submap_max_distance_m: 4.0  # a keyframe farther than this from the submap anchor starts a new submap
+
+# ------------------------------------------------------------------
+# Visualization (RViz / debugging output)
+# Keys that only affect published topics and how often the visualizers
+# refresh; they do not affect the estimation or mapping pipeline.
+# ------------------------------------------------------------------
+kf_topic_keyframe_pose: "keyframe_pose"   # topic for the selected keyframe pose (debug)
+kf_topic_keyframe_image: "keyframe_image" # topic for the selected keyframe image (debug)
+kf_publish_debug: true                    # publish selected keyframe pose/image for debugging / rosbag analysis
 dense_full_cloud_period_s: 5.0    # full /dense_cloud rebuild period; /dense_submaps is incremental
+map_viz_max_frustums: 300       # newest keyframes drawn as frustums in /map_visualization (-1 = all)

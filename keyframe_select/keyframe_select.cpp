@@ -7,6 +7,7 @@
 
 #include <cmath>
 
+#include "utility/config_reader.h"
 #include "utils/print.h"
 
 namespace vslam
@@ -67,18 +68,34 @@ namespace vslam
       return;
     }
 
+    // Shared, not cloned: see feedImage() in the header.
     StampedImage stamped;
     stamped.timestamp = timestamp;
-    stamped.image = image.clone();
-    if (!image_right.empty())
-    {
-      stamped.image_right = image_right.clone();
-    }
+    stamped.image = image;
+    stamped.image_right = image_right;
     stamped.cam_id = cam_id;
 
     {
       std::lock_guard<std::mutex> lock(sync_buffer_mutex_);
       image_buffer_.push_back(std::move(stamped));
+      if (select_config_.image_max_age_s > 0.0)
+      {
+        const double oldest_allowed = timestamp - select_config_.image_max_age_s;
+        while (!image_buffer_.empty() && image_buffer_.front().timestamp < oldest_allowed)
+        {
+          image_buffer_.pop_front();
+          ++aged_out_images_;
+        }
+        // Throttled by sensor time: at most one warning every 5 s.
+        if (aged_out_images_ > 0 && (last_age_warn_time_ < 0.0 || timestamp - last_age_warn_time_ >= 5.0))
+        {
+          PRINT_WARNING("[KF_SELECT]: dropped %zu images older than %.1f s without a matching pose "
+                        "(VIO not initialized or pose stream lagging)\n",
+                        aged_out_images_, select_config_.image_max_age_s);
+          aged_out_images_ = 0;
+          last_age_warn_time_ = timestamp;
+        }
+      }
       while (static_cast<int>(image_buffer_.size()) > select_config_.image_queue_size)
       {
         image_buffer_.pop_front();
@@ -209,6 +226,22 @@ namespace vslam
     }
 
     keyframe_queue_->push(std::move(kf));
+  }
+
+
+  void KeyframeSelectConfig::load(ConfigReader &reader)
+  {
+    reader.read("kf_dist_thresh", dist_thresh);
+    reader.read("kf_angle_thresh_deg", angle_thresh_deg);
+    reader.read("kf_sync_slop", sync_slop);
+    reader.read("kf_pose_queue_size", pose_queue_size);
+    reader.read("kf_image_queue_size", image_queue_size);
+    reader.read("kf_image_max_age_s", image_max_age_s);
+    reader.read("kf_output_queue_size", output_queue_size);
+    reader.read("kf_topic_pose", topic_pose);
+    reader.read("kf_topic_keyframe_pose", topic_keyframe_pose);
+    reader.read("kf_topic_keyframe_image", topic_keyframe_image);
+    reader.read("kf_publish_debug", publish_debug);
   }
 
 } // namespace vslam

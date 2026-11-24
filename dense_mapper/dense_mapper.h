@@ -12,11 +12,13 @@
 #include <Eigen/Geometry>
 #include <opencv2/core.hpp>
 
-#include "colmap/online_sfm/online_incremental_mapper.h"
+#include "dense_mapper/rigid.h"
 #include "map_manager/map.h"
 
 namespace vslam
 {
+
+class ConfigReader;
 
 struct DenseConfig
 {
@@ -66,9 +68,22 @@ struct DenseConfig
   /// Block rebuilds after pose changes / removals are batched over at most this
   /// many keyframes, or run as soon as the queue is empty.
   int replay_max_defer_jobs = 5;
-  /// Redundant keyframes (culled / capacity-evicted) leave their contribution
-  /// in the volume when false; only scene-change removals rebuild blocks.
+  /// Redundant keyframes (grid-replaced by a newer pass of the same cell)
+  /// leave their contribution in the volume when false; changes are cleared
+  /// by the newer pass's observations. true rebuilds their blocks without them.
   bool rebuild_redundant_removals = false;
+  /// Fusion-thread time per call spent on a submap rebuild; the rest continues
+  /// on later calls, so new keyframes are not held up. <=0: a whole submap per call.
+  double replay_budget_ms = 20.0;
+  /// Near-surface voxel replacement: a newer view whose sdf (in truncation
+  /// units) has the opposite sign and differs by more than this replaces the
+  /// voxel instead of averaging into it, so a surface that moved by less than
+  /// the truncation distance updates in one view. <=0 disables.
+  double replace_sdf_diff = 0.5;
+  /// Minimum depth confidence (0..1) of the pixel for a replacement.
+  double replace_min_conf = 0.5;
+  /// Weight a replaced voxel restarts with; only voxels above it are replaced.
+  double replace_weight = 2.0;
   /// Depth pixels of only the newest N fused keyframes stay in memory (they are
   /// the verification references); older ones are re-read from disk when a
   /// rebuild needs them. <=0 keeps every frame in memory.
@@ -82,6 +97,35 @@ struct DenseConfig
   double submap_max_distance_m = 4.0;
   /// OpenMP threads for TSDF fusion / rebuild. <=0 uses all cores (hurts VIO).
   int num_threads = 2;
+  /// TSDF submaps are saved under <map>/dense/tsdf at this period and on stop,
+  /// so a resumed map loads them instead of re-fusing every stored depth frame.
+  /// <=0 saves only on stop.
+  double snapshot_period_s = 30.0;
+  /// Volume statistics (empty blocks, occupancy, points per block) are logged
+  /// with a publish at most this often. <=0 disables.
+  double stats_period_s = 10.0;
+  /// Every N-th pixel in x and y seeds the candidate blocks of a fusion. The
+  /// voxel update still reads every pixel. Capped per frame so neighbouring
+  /// seeds stay within one voxel at the farthest depth.
+  int integrate_pixel_stride = 4;
+  /// Blocks whose voxels all lost their weight are freed. A tombstone keeps
+  /// their newest keyframe id so an older frame cannot write them back.
+  bool free_empty_blocks = true;
+  /// A keyframe within both thresholds of one of the last inferred keyframes
+  /// skips S²M² (its poses and removals still apply). <=0 disables either test.
+  double skip_similar_trans_m = 0.10;
+  double skip_similar_rot_deg = 5.0;
+  /// At most this many keyframe images wait for S²M²; the oldest images are
+  /// dropped first. Inference also waits while this many depths wait for
+  /// fusion. <=0 unlimited.
+  int max_queue_frames = 30;
+  /// A submap unused for this long (not the active one) keeps only its surface
+  /// in memory; its voxels go to the snapshot file and are read back when a
+  /// keyframe, carve or rebuild touches it. <=0 keeps every submap in memory.
+  double freeze_idle_s = 30.0;
+
+  /// Reads this struct's keys from vslam.yaml.
+  void load(ConfigReader &reader);
 };
 
 struct DenseCloud
@@ -140,11 +184,12 @@ public:
   /// redundant_ids: the subset of removed_ids dropped only for redundancy.
   /// pose_updates: current poses of any known keyframes (loop corrections and trackedIds()).
   /// sparse_xyz: map points observed by this keyframe.
+  /// Poses are cam_from_world of the (unrectified) left camera.
   void submit(uint32_t image_id, bool registered, const cv::Mat &left, const cv::Mat &right,
-              const colmap::MappingPose &cam_from_world,
+              const dense::Rigid &cam_from_world,
               const std::vector<uint32_t> &removed_ids,
               const std::vector<uint32_t> &redundant_ids,
-              const std::vector<std::pair<uint32_t, colmap::MappingPose>> &pose_updates,
+              const std::vector<std::pair<uint32_t, dense::Rigid>> &pose_updates,
               const std::vector<Eigen::Vector3f> &sparse_xyz);
 
 private:

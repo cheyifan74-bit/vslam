@@ -13,6 +13,9 @@
 # INSTALL_RPATH_USE_LINK_PATH keeps that non-system libceres resolvable at runtime without LD_LIBRARY_PATH.
 # CUDA archs default to "native" (the local GPU, e.g. sm_120 on RTX 50); mixvpr's own fallback (75;86;89)
 # misses Blackwell. Override with CUDA_ARCHS, e.g. CUDA_ARCHS="86;89;120".
+# NATIVE_OPT=ON (default) compiles ov_core/ov_init/ov_msckf/vslam with -march=native -mtune=native,
+# i.e. AVX2/FMA/BMI2 on this laptop (Alder Lake). Set NATIVE_OPT=OFF when the binaries must run on an
+# older CPU. DEBUG_SYMBOLS=ON restores -g3 for gdb / readable backtraces (slower link, huge binaries).
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -61,4 +64,5 @@ colcon build \
   --packages-up-to vslam \
   "$@" \
   --cmake-args -DCMAKE_BUILD_TYPE=Release -DCeres_DIR="$CERES_DIR" -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON \
+    -DENABLE_NATIVE_OPT="${NATIVE_OPT:-ON}" -DENABLE_DEBUG_SYMBOLS="${DEBUG_SYMBOLS:-OFF}" \
     -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS:-native}"

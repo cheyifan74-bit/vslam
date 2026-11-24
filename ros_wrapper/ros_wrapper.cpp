@@ -8,11 +8,6 @@
  */
 #include "ros_wrapper.h"
 
-#include <unordered_map>
-#include <algorithm>
-#include <array>
-#include <cmath>
-
 #include "app/application.h"
 #include "keyframe_select/keyframe_select.h"
 #include "utility/math_utils.h"
@@ -26,10 +21,7 @@
 #include "utils/sensor_data.h"
 
 #include <cv_bridge/cv_bridge.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <sensor_msgs/point_cloud2_iterator.h>
-#include <visualization_msgs/Marker.h>
-#include <std_msgs/Header.h>
+#include <sensor_msgs/image_encodings.h>
 
 namespace vslam
 {
@@ -41,6 +33,10 @@ namespace vslam
 
   RosWrapper::~RosWrapper()
   {
+    if (map_viz_)
+    {
+      map_viz_->stop();
+    }
     if (viz_)
     {
       viz_->visualize_final();
@@ -79,15 +75,11 @@ namespace vslam
       return;
     }
 
-    pub_map_global_ = nh_->advertise<sensor_msgs::PointCloud2>("map_points_global", 1);
-    pub_map_local_ = nh_->advertise<sensor_msgs::PointCloud2>("map_points_local", 1);
-    pub_map_markers_ = nh_->advertise<visualization_msgs::MarkerArray>("map_visualization", 1);
-    if (auto map_manager = app_->getMapManager())
-      map_manager->setVisualizationCallback(
-          [this](const MapVisualizationSnapshot &snapshot) { publishMapVisualization(snapshot); });
+    map_viz_ = std::make_unique<MapVisualizer>(*nh_, app_->getMapVizConfig());
+    map_viz_->attachMapManager(app_->getMapManager());
 
-    PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect topics...\n");
-    setupKeyframeSelectTopics();
+    PRINT_INFO("[ROS_WRAPPER]: Setting up KeyframeSelect...\n");
+    setupKeyframeSelect();
 
     PRINT_INFO("[ROS_WRAPPER]: Setting up sensor subscribers...\n");
     setupSubscribers();
@@ -95,28 +87,14 @@ namespace vslam
     PRINT_INFO("[ROS_WRAPPER]: Initialization complete.\n");
   }
 
-  void RosWrapper::setupKeyframeSelectTopics()
+  void RosWrapper::setupKeyframeSelect()
   {
     const KeyframeSelectConfig &kf_cfg = app_->getKeyframeSelectConfig();
-    kf_publish_debug_ = kf_cfg.publish_debug;
 
     sub_pose_ = nh_->subscribe(kf_cfg.topic_pose, kf_cfg.pose_queue_size, &RosWrapper::callbackPose, this);
     PRINT_INFO("[ROS_WRAPPER]: KeyframeSelect pose topic: %s\n", kf_cfg.topic_pose.c_str());
 
-    if (kf_publish_debug_)
-    {
-      pub_kf_pose_ = nh_->advertise<geometry_msgs::PoseStamped>(kf_cfg.topic_keyframe_pose, 10);
-      pub_kf_image_ = nh_->advertise<sensor_msgs::Image>(kf_cfg.topic_keyframe_image, 2);
-      PRINT_INFO("[ROS_WRAPPER]: KeyframeSelect debug pub: %s, %s\n", kf_cfg.topic_keyframe_pose.c_str(),
-                 kf_cfg.topic_keyframe_image.c_str());
-
-      // Debug publish runs on KeyframeSelect worker thread, not in sensor callbacks.
-      auto kf_select = app_->getKeyframeSelect();
-      if (kf_select)
-      {
-        kf_select->setKeyframeSelectedCallback([this](const Keyframe &kf) { publishKeyframeDebug(kf); });
-      }
-    }
+    map_viz_->attachKeyframeSelect(kf_cfg, app_->getKeyframeSelect());
   }
 
   Pose3d RosWrapper::poseFromMsg(const PoseMsg &msg)
@@ -171,7 +149,8 @@ namespace vslam
     kf_select->feedPose(pose_msg->header.stamp.toSec(), camera_pose, pose_msg->header.frame_id);
   }
 
-  void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id)
+  void RosWrapper::feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
+                                     const cv::Mat &image_right)
   {
     auto kf_select = app_->getKeyframeSelect();
     if (!kf_select)
@@ -180,191 +159,7 @@ namespace vslam
     }
 
     // Callback only enqueues; selection runs on KeyframeSelect worker thread.
-    kf_select->feedImage(timestamp, image, cam_id);
-  }
-
-  void RosWrapper::publishKeyframeDebug(const Keyframe &kf)
-  {
-    geometry_msgs::PoseStamped pose_msg;
-    pose_msg.header.stamp = ros::Time(kf.timestamp);
-    pose_msg.header.frame_id = kf.frame_id.empty() ? "global" : kf.frame_id;
-    pose_msg.pose.position.x = kf.pose.position.x();
-    pose_msg.pose.position.y = kf.pose.position.y();
-    pose_msg.pose.position.z = kf.pose.position.z();
-    pose_msg.pose.orientation.x = kf.pose.orientation.x();
-    pose_msg.pose.orientation.y = kf.pose.orientation.y();
-    pose_msg.pose.orientation.z = kf.pose.orientation.z();
-    pose_msg.pose.orientation.w = kf.pose.orientation.w();
-    pub_kf_pose_.publish(pose_msg);
-
-    if (!kf.image.empty() && pub_kf_image_.getNumSubscribers() > 0)
-    {
-      std_msgs::Header header = pose_msg.header;
-      header.frame_id = "cam0";
-      const std::string encoding = (kf.image.channels() == 1) ? "mono8" : "bgr8";
-      pub_kf_image_.publish(cv_bridge::CvImage(header, encoding, kf.image).toImageMsg());
-    }
-  }
-
-  void RosWrapper::publishMapVisualization(const MapVisualizationSnapshot &snapshot)
-  {
-    const auto make_cloud = [](const std::vector<MapVizPoint> &points,
-                               uint8_t r, uint8_t g, uint8_t b) {
-      sensor_msgs::PointCloud2 cloud;
-      cloud.header.frame_id = "global";
-      cloud.header.stamp = ros::Time::now();
-      cloud.height = 1;
-      cloud.width = static_cast<uint32_t>(points.size());
-      cloud.is_dense = true;
-      sensor_msgs::PointCloud2Modifier modifier(cloud);
-      modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
-      modifier.resize(points.size());
-      sensor_msgs::PointCloud2Iterator<float> x(cloud, "x"), y(cloud, "y"), z(cloud, "z");
-      sensor_msgs::PointCloud2Iterator<uint32_t> rgb(cloud, "rgb");
-      const uint32_t color = (static_cast<uint32_t>(r) << 16) |
-                             (static_cast<uint32_t>(g) << 8) | b;
-      for (const auto &point : points) {
-        *x = static_cast<float>(point.position.x());
-        *y = static_cast<float>(point.position.y());
-        *z = static_cast<float>(point.position.z());
-        *rgb = color;
-        ++x; ++y; ++z; ++rgb;
-      }
-      return cloud;
-    };
-    const ros::Time stamp = ros::Time::now();
-    auto global_cloud = make_cloud(snapshot.global_points, 255, 255, 255);
-    auto local_cloud = make_cloud(snapshot.local_points, 255, 0, 0);
-    global_cloud.header.stamp = stamp;
-    local_cloud.header.stamp = stamp;
-    pub_map_global_.publish(global_cloud);
-    pub_map_local_.publish(local_cloud);
-
-    visualization_msgs::MarkerArray array;
-    visualization_msgs::Marker clear;
-    clear.header.frame_id = "global";
-    clear.header.stamp = stamp;
-    clear.ns = "vslam_map";
-    clear.id = 0;
-    clear.action = visualization_msgs::Marker::DELETEALL;
-    array.markers.push_back(clear);
-
-    std::vector<double> steps;
-    for (size_t i = 1; i < snapshot.keyframes.size(); ++i) {
-      const double distance = (snapshot.keyframes[i].position - snapshot.keyframes[i - 1].position).norm();
-      if (std::isfinite(distance) && distance > 1e-4) steps.push_back(distance);
-    }
-    double depth = 0.25;
-    if (!steps.empty()) {
-      const auto middle = steps.begin() + steps.size() / 2;
-      std::nth_element(steps.begin(), middle, steps.end());
-      depth = std::clamp(*middle * 0.30, 0.12, 1.5);
-    }
-
-    visualization_msgs::Marker positions;
-    positions.header = clear.header;
-    positions.ns = "keyframes";
-    positions.id = 1;
-    positions.type = visualization_msgs::Marker::SPHERE_LIST;
-    positions.action = visualization_msgs::Marker::ADD;
-    positions.scale.x = positions.scale.y = positions.scale.z = depth * 0.10;
-    positions.color.r = 0.1; positions.color.g = 0.8; positions.color.b = 1.0; positions.color.a = 1.0;
-
-    visualization_msgs::Marker path = positions;
-    path.ns = "keyframe_path"; path.id = 2;
-    path.type = visualization_msgs::Marker::LINE_STRIP;
-    path.scale.x = depth * 0.035;
-
-    visualization_msgs::Marker frustums = positions;
-    frustums.ns = "keyframe_frustums"; frustums.id = 3;
-    frustums.type = visualization_msgs::Marker::LINE_LIST;
-    frustums.scale.x = depth * 0.025;
-    frustums.color.r = 0.1; frustums.color.g = 0.8; frustums.color.b = 1.0;
-    visualization_msgs::Marker loops = frustums;
-    loops.ns = "loop_edges"; loops.id = 4;
-    loops.scale.x = depth * 0.04;
-    loops.color.r = 1.0; loops.color.g = 0.1; loops.color.b = 1.0;
-
-    const auto to_point = [](const Eigen::Vector3d &v) {
-      geometry_msgs::Point p; p.x = v.x(); p.y = v.y(); p.z = v.z(); return p;
-    };
-    const auto add_segment = [](visualization_msgs::Marker &marker,
-                                const Eigen::Vector3d &a, const Eigen::Vector3d &b) {
-      geometry_msgs::Point p, q;
-      p.x=a.x(); p.y=a.y(); p.z=a.z(); q.x=b.x(); q.y=b.y(); q.z=b.z();
-      marker.points.push_back(p); marker.points.push_back(q);
-    };
-    std::unordered_map<uint32_t, Eigen::Vector3d> positions_by_id;
-    for (const auto &kf : snapshot.keyframes) {
-      positions.points.push_back(to_point(kf.position));
-      path.points.push_back(to_point(kf.position));
-      positions_by_id[kf.id] = kf.position;
-      const Eigen::Quaterniond q = kf.orientation.normalized();
-      const double w = depth * 0.65, h = depth * 0.45;
-      const std::array<Eigen::Vector3d, 4> corners = {
-          Eigen::Vector3d(-w, -h, depth), Eigen::Vector3d(w, -h, depth),
-          Eigen::Vector3d(w, h, depth), Eigen::Vector3d(-w, h, depth)};
-      std::array<Eigen::Vector3d, 4> world_corners;
-      for (size_t i = 0; i < corners.size(); ++i) world_corners[i] = kf.position + q * corners[i];
-      for (size_t i = 0; i < corners.size(); ++i) {
-        add_segment(frustums, kf.position, world_corners[i]);
-        add_segment(frustums, world_corners[i], world_corners[(i + 1) % corners.size()]);
-      }
-      add_segment(frustums, kf.position, kf.position + q * Eigen::Vector3d(0, 0, depth * 1.2));
-    }
-    for (const auto &loop : snapshot.confirmed_loops) {
-      if (positions_by_id.count(loop.current_id) && positions_by_id.count(loop.candidate_id))
-        add_segment(loops, positions_by_id.at(loop.current_id), positions_by_id.at(loop.candidate_id));
-    }
-
-    visualization_msgs::Marker current = positions;
-    current.ns = "current_keyframe"; current.id = 5;
-    current.scale.x = current.scale.y = current.scale.z = depth * 0.24;
-    current.color.r = 1.0; current.color.g = 0.65; current.color.b = 0.0;
-    current.points.clear();
-    auto current_it = std::find_if(snapshot.keyframes.begin(), snapshot.keyframes.end(),
-        [&](const MapVizKeyframe &kf) { return kf.id == snapshot.current_keyframe_id; });
-    visualization_msgs::Marker current_frustum = frustums;
-    current_frustum.ns = "current_frustum"; current_frustum.id = 6;
-    current_frustum.points.clear();
-    current_frustum.color.r = 1.0; current_frustum.color.g = 0.65; current_frustum.color.b = 0.0;
-    visualization_msgs::Marker axes;
-    axes.header = clear.header; axes.ns = "current_axes"; axes.action = visualization_msgs::Marker::ADD;
-    axes.type = visualization_msgs::Marker::LINE_LIST; axes.scale.x = depth * 0.045;
-    if (current_it != snapshot.keyframes.end()) {
-      const auto &kf = *current_it;
-      current.points.push_back(to_point(kf.position));
-      const Eigen::Quaterniond q = kf.orientation.normalized();
-      const double w = depth * 0.65, h = depth * 0.45;
-      const std::array<Eigen::Vector3d, 4> corners = {
-          Eigen::Vector3d(-w, -h, depth), Eigen::Vector3d(w, -h, depth),
-          Eigen::Vector3d(w, h, depth), Eigen::Vector3d(-w, h, depth)};
-      std::array<Eigen::Vector3d, 4> world_corners;
-      for (size_t i = 0; i < corners.size(); ++i) world_corners[i] = kf.position + q * corners[i];
-      for (size_t i = 0; i < corners.size(); ++i) {
-        add_segment(current_frustum, kf.position, world_corners[i]);
-        add_segment(current_frustum, world_corners[i], world_corners[(i + 1) % corners.size()]);
-      }
-      add_segment(current_frustum, kf.position, kf.position + q * Eigen::Vector3d(0, 0, depth * 1.2));
-      const double axis_len = depth * 1.8;
-      visualization_msgs::Marker x_axis = axes, y_axis = axes, z_axis = axes;
-      x_axis.id = 0; y_axis.id = 1; z_axis.id = 2;
-      x_axis.color.r = 1; x_axis.color.a = 1;
-      y_axis.color.g = 1; y_axis.color.a = 1;
-      z_axis.color.b = 1; z_axis.color.a = 1;
-      add_segment(x_axis, kf.position, kf.position + q * Eigen::Vector3d::UnitX() * axis_len);
-      add_segment(y_axis, kf.position, kf.position + q * Eigen::Vector3d::UnitY() * axis_len);
-      add_segment(z_axis, kf.position, kf.position + q * Eigen::Vector3d::UnitZ() * axis_len);
-      array.markers.push_back(x_axis); array.markers.push_back(y_axis); array.markers.push_back(z_axis);
-    }
-
-    array.markers.push_back(positions);
-    array.markers.push_back(path);
-    array.markers.push_back(frustums);
-    array.markers.push_back(current_frustum);
-    array.markers.push_back(loops);
-    array.markers.push_back(current);
-    pub_map_markers_.publish(array);
+    kf_select->feedImage(timestamp, image, cam_id, image_right);
   }
 
   void RosWrapper::run()
@@ -375,10 +170,20 @@ namespace vslam
       return;
     }
 
+    if (map_viz_)
+    {
+      map_viz_->start();
+    }
+
     PRINT_INFO("[ROS_WRAPPER]: Starting ROS async spinner...\n");
     ros::AsyncSpinner spinner(0);
     spinner.start();
     ros::waitForShutdown();
+
+    if (map_viz_)
+    {
+      map_viz_->stop();
+    }
   }
 
   void RosWrapper::setupSubscribers()
@@ -519,7 +324,8 @@ namespace vslam
       message.masks.push_back(cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1));
     }
 
-    feedKeyframeImage(message.timestamp, message.images.front(), cam_id0);
+    feedKeyframeImage(message.timestamp, message.images.front(), cam_id0,
+                      message.images.size() > 1 ? message.images[1] : cv::Mat());
     viz_->handleCameraMeasurement(message);
   }
 

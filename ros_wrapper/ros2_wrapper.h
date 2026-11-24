@@ -1,6 +1,7 @@
 /*
  * @Description: ROS2 Wrapper — thin ROS2 glue layer (rclcpp counterpart of ros_wrapper.h).
  *               Sensor subscription + message conversion + KeyframeSelect ROS I/O.
+ *               Map / dense / keyframe-debug output: visualization/ros2/map_visualizer.h.
  * @Author: che yifan
  * @Date: 2026-10-22
  * @LastEditTime: 2026-10-22
@@ -10,20 +11,13 @@
 #ifndef VSLAM_ROS2_WRAPPER_H
 #define VSLAM_ROS2_WRAPPER_H
 
-#include <chrono>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <visualization_msgs/msg/marker_array.hpp>
 
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -33,6 +27,7 @@
 
 #include "keyframe_select/keyframe.h"
 #include "map_manager/map_manager.h"
+#include "visualization/ros2/map_visualizer.h"
 
 namespace ov_core
 {
@@ -67,66 +62,32 @@ namespace vslam
     std::shared_ptr<KeyframeQueue> getKeyframeQueue() const;
 
   private:
-    using PoseMsg = geometry_msgs::msg::PoseWithCovarianceStamped;
     using ImageMsg = sensor_msgs::msg::Image;
     using ImuMsg = sensor_msgs::msg::Imu;
 
     void init(const std::string &config_path);
     void setupSubscribers();
-    /// Subscribe pose topic and optional debug publishers for KeyframeSelect.
-    void setupKeyframeSelectTopics();
+    /// Feeds VIO poses to KeyframeSelect in-process and sets up its debug publishers.
+    void setupKeyframeSelect();
 
     void callbackInertial(const ImuMsg::ConstSharedPtr msg);
     void callbackMonocular(const ImageMsg::ConstSharedPtr msg, int cam_id);
     void callbackStereo(const ImageMsg::ConstSharedPtr msg0, const ImageMsg::ConstSharedPtr msg1, int cam_id0, int cam_id1);
-    void callbackPose(const PoseMsg::ConstSharedPtr pose_msg);
 
     void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
                            const cv::Mat &image_right = cv::Mat());
-    void publishKeyframeDebug(const Keyframe &kf);
-    void publishMapVisualization(const MapVisualizationSnapshot &snapshot);
-    /// Converts the newest dense update on the ROS executor, never on the dense thread.
-    void publishDenseCloud();
-    void publishDenseFullCloud(const DenseUpdate &update);
-    static Pose3d poseFromMsg(const PoseMsg &msg);
-    /// Convert poseimu (IMU in global) to left-camera pose in global using OpenVINS extrinsics.
-    bool convertImuPoseMsgToCameraPose(const PoseMsg &pose_msg, Pose3d &camera_pose) const;
 
     std::shared_ptr<Application> app_;
     std::shared_ptr<ov_msckf::ROS2Visualizer> viz_;
     std::shared_ptr<rclcpp::Node> node_;
     std::shared_ptr<ov_core::YamlParser> parser_;
 
-    /// Separate groups so IMU / camera / pose callbacks may run in parallel (like ros::AsyncSpinner),
+    /// Separate groups so IMU / camera callbacks may run in parallel (like ros::AsyncSpinner),
     /// while callbacks of the same stream stay serialized.
     rclcpp::CallbackGroup::SharedPtr cb_group_imu_;
     rclcpp::CallbackGroup::SharedPtr cb_group_cam_;
-    rclcpp::CallbackGroup::SharedPtr cb_group_pose_;
 
     rclcpp::Subscription<ImuMsg>::SharedPtr sub_imu_;
-    rclcpp::Subscription<PoseMsg>::SharedPtr sub_pose_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_kf_pose_;
-    rclcpp::Publisher<ImageMsg>::SharedPtr pub_kf_image_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_global_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_local_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_map_markers_;
-    /// Full map in "global"; rebuilt at most every dense_full_cloud_period_s.
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dense_cloud_;
-    /// One POINTS marker per submap, posed by world_from_submap: a loop closure
-    /// only re-sends poses, a surface change only its own submap.
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_dense_submaps_;
-    std::mutex dense_cloud_mutex_;
-    std::shared_ptr<const DenseUpdate> latest_dense_;
-    std::unordered_set<uint32_t> dense_changed_ids_;
-    std::unordered_set<uint32_t> dense_removed_ids_;
-    bool dense_full_dirty_ = false;
-    size_t dense_submap_subscribers_ = 0;
-    double dense_full_cloud_period_s_ = 5.0;
-    sensor_msgs::msg::PointCloud2::SharedPtr last_dense_msg_;
-    std::chrono::steady_clock::time_point last_dense_publish_;
-    std::chrono::steady_clock::time_point last_dense_full_build_;
-    rclcpp::TimerBase::SharedPtr dense_timer_;
-    bool kf_publish_debug_ = true;
 
     std::vector<rclcpp::Subscription<ImageMsg>::SharedPtr> camera_subs_;
 
@@ -135,10 +96,8 @@ namespace vslam
     std::vector<std::shared_ptr<message_filters::Subscriber<ImageMsg>>> sync_subs_cam_;
     std::vector<std::shared_ptr<message_filters::Synchronizer<SyncPolicy>>> sync_cam_;
 
-    /// RViz subscribes with default (volatile) QoS, so a snapshot published before
-    /// it connects is never seen. Republish the current map periodically so a
-    /// resumed map appears as soon as RViz starts (and survives an RViz restart).
-    rclcpp::TimerBase::SharedPtr map_viz_timer_;
+    /// vslam map / dense / keyframe-debug output on its own DDS participant and thread.
+    std::unique_ptr<MapVisualizer> map_viz_;
   };
 
 } // namespace vslam

@@ -13,6 +13,8 @@
 namespace vslam
 {
 
+  class ConfigReader;
+
   /// Camera intrinsics used when seeding COLMAP cameras table.
   struct CameraParams
   {
@@ -40,8 +42,10 @@ namespace vslam
     /// Reuse an existing session (load sparse + database) instead of starting
     /// a new one. Takes precedence over clear_old_session.
     bool resume_existing = false;
-    bool save_images = true;
     std::string image_extension = "png";
+
+    /// Reads this struct's keys from vslam.yaml.
+    void load(ConfigReader &reader);
   };
 
   /**

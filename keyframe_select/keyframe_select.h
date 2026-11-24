@@ -42,9 +42,11 @@ namespace vslam
     KeyframeSelect(const KeyframeSelect &) = delete;
     KeyframeSelect &operator=(const KeyframeSelect &) = delete;
 
-    /// Enqueue left-camera image (cam_id != 0 ignored). Non-blocking aside from clone+lock.
+    /// Enqueue left-camera image (cam_id != 0 ignored). Non-blocking aside from the lock.
     /// `image_right` is kept with the same timestamp and attached when this frame
     /// is selected as a keyframe. Dense mapping uses it; sparse mapping does not.
+    /// The pixels are shared, not copied (the same buffers also go to OpenVINS),
+    /// so neither the caller nor any consumer may modify them in place.
     void feedImage(double timestamp, const cv::Mat &image, int cam_id = 0,
                    const cv::Mat &image_right = cv::Mat());
 
@@ -89,6 +91,9 @@ namespace vslam
     mutable std::mutex sync_buffer_mutex_;
     std::condition_variable worker_condition_;
     std::deque<StampedImage> image_buffer_;
+    /// Images dropped by age since the last warning; guarded by sync_buffer_mutex_.
+    size_t aged_out_images_ = 0;
+    double last_age_warn_time_ = -1.0;
     std::deque<StampedPose, Eigen::aligned_allocator<StampedPose>> pose_buffer_;
     bool has_pending_work_ = false;
     std::atomic<bool> stop_worker_{false};

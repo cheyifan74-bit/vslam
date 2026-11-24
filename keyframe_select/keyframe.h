@@ -14,6 +14,8 @@
 
 namespace vslam
 {
+
+  class ConfigReader;
   struct Pose3d
   {
     Eigen::Vector3d position = Eigen::Vector3d::Zero();
@@ -42,12 +44,18 @@ namespace vslam
     double sync_slop = 0.02;        ///< image-pose timestamp match slop (seconds)
     int pose_queue_size = 50;
     int image_queue_size = 10;
+    /// Drop buffered images older than (newest - image_max_age_s). Bounds the
+    /// buffer while no poses arrive (e.g. before VIO initializes). <= 0 disables.
+    double image_max_age_s = 3.0;
     int output_queue_size = 20; ///< drop oldest if full
 
-    std::string topic_pose = "/ov_msckf/poseimu";
+    std::string topic_pose = "/ov_msckf/poseimu"; ///< ROS1 wrapper only
     std::string topic_keyframe_pose = "keyframe_pose";
     std::string topic_keyframe_image = "keyframe_image";
     bool publish_debug = true;
+
+    /// Reads this struct's keys from vslam.yaml.
+    void load(ConfigReader &reader);
   };
 
 } // namespace vslam

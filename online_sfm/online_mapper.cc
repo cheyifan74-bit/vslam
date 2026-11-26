@@ -1789,7 +1789,6 @@ bool OnlineMapper::RemoveKeyframe(const image_t image_id,
   pose_priors_.erase(image_id);
   stored_priors_.erase(image_id);
   ++sparse_writes_since_flush_;
-  AppendCullRecord(image_id, reason, score);
   LOG(INFO) << "OnlineMapper: removed keyframe " << image_id << " (" << reason
             << " score=" << score << ") points3D=" << num_points_before
             << "->" << reconstruction_->NumPoints3D()

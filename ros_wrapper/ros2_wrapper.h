@@ -73,6 +73,7 @@ namespace vslam
     void callbackInertial(const ImuMsg::ConstSharedPtr msg);
     void callbackMonocular(const ImageMsg::ConstSharedPtr msg, int cam_id);
     void callbackStereo(const ImageMsg::ConstSharedPtr msg0, const ImageMsg::ConstSharedPtr msg1, int cam_id0, int cam_id1);
+    void callbackColor(const ImageMsg::ConstSharedPtr msg);
 
     void feedKeyframeImage(double timestamp, const cv::Mat &image, int cam_id,
                            const cv::Mat &image_right = cv::Mat());
@@ -86,8 +87,10 @@ namespace vslam
     /// while callbacks of the same stream stay serialized.
     rclcpp::CallbackGroup::SharedPtr cb_group_imu_;
     rclcpp::CallbackGroup::SharedPtr cb_group_cam_;
+    rclcpp::CallbackGroup::SharedPtr cb_group_color_;
 
     rclcpp::Subscription<ImuMsg>::SharedPtr sub_imu_;
+    rclcpp::Subscription<ImageMsg>::SharedPtr sub_color_;
 
     std::vector<rclcpp::Subscription<ImageMsg>::SharedPtr> camera_subs_;
 

@@ -38,6 +38,15 @@ launch_args = [
     DeclareLaunchArgument("bag_start", default_value="0"),
     DeclareLaunchArgument("bag_rate", default_value="1.0"),
     DeclareLaunchArgument("bag_delay", default_value="1"),
+    # SigLIP2 semantic indexer (Python). Needs torch + transformers installed.
+    DeclareLaunchArgument("dosemantic", default_value="false"),
+    DeclareLaunchArgument("map_root", default_value="/tmp/vslam_map"),
+    DeclareLaunchArgument(
+        "semantic_model",
+        default_value="/home/cyf/vslam_ws/src/vslam/data/models/siglip2-so400m-patch14-384",
+    ),
+    DeclareLaunchArgument("semantic_topk", default_value="5"),
+    DeclareLaunchArgument("semantic_device", default_value="cpu"),
 ]
 
 
@@ -87,7 +96,24 @@ def launch_setup(context):
         output="screen",
     )
 
-    return [vslam_node, rviz_node, bag_play]
+    # CPU by default: share the laptop GPU with VSLAM (SIFT/MixVPR/S2M2) without
+    # stalling SigLIP2 inference. Override with semantic_device:=cuda if desired.
+    semantic_node = Node(
+        package="vslam",
+        executable="semantic_index_node.py",
+        name="semantic_index",
+        condition=IfCondition(LaunchConfiguration("dosemantic")),
+        output="screen",
+        emulate_tty=True,
+        arguments=[
+            "--map-root", LaunchConfiguration("map_root"),
+            "--model", LaunchConfiguration("semantic_model"),
+            "--topk", LaunchConfiguration("semantic_topk"),
+            "--device", LaunchConfiguration("semantic_device"),
+        ],
+    )
+
+    return [vslam_node, rviz_node, bag_play, semantic_node]
 
 
 def generate_launch_description():

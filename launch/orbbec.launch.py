@@ -170,6 +170,9 @@ def launch_setup(context):
             "rviz_config": rviz_config,
             "verbosity": LaunchConfiguration("verbosity"),
             "namespace": LaunchConfiguration("namespace"),
+            "dosemantic": LaunchConfiguration("dosemantic"),
+            "map_root": LaunchConfiguration("map_root"),
+            "semantic_device": LaunchConfiguration("semantic_device"),
         }.items(),
     )
 
@@ -197,8 +200,12 @@ def generate_launch_description():
         DeclareLaunchArgument("dovslam", default_value="true"),
         DeclareLaunchArgument("doviz", default_value="true"),
         DeclareLaunchArgument("rviz_config", default_value=""),
-        # 原始 RGB 是否发布 (不影响 VIO 用哪路); 默认关, 给相机发布线程减负
-        DeclareLaunchArgument("color", default_value="false"),
+        # 原始 RGB 是否发布 (不影响 VIO 用哪路); 语义索引需要 true
+        # 默认 true: orbbec/vslam.yaml 已开 semantic_enabled
+        DeclareLaunchArgument("color", default_value="true"),
+        DeclareLaunchArgument("dosemantic", default_value="true"),
+        DeclareLaunchArgument("map_root", default_value="/tmp/vslam_map"),
+        DeclareLaunchArgument("semantic_device", default_value="cpu"),
         # 相机点云 (仅 RViz 查看用)
         DeclareLaunchArgument("pointcloud", default_value="false"),
         # 主动红外激光: off / low / full / interleave(硬件帧交错开/关)

@@ -7,6 +7,9 @@
 
 #include <cmath>
 
+#include <thread>
+
+#include "semantic_index/color_image_buffer.h"
 #include "utility/config_reader.h"
 #include "utils/print.h"
 
@@ -52,6 +55,13 @@ namespace vslam
   {
     std::lock_guard<std::mutex> lock(keyframe_callback_mutex_);
     keyframe_selected_callback_ = std::move(callback);
+  }
+
+  void KeyframeSelect::setColorImageBuffer(const std::shared_ptr<ColorImageBuffer> &buffer,
+                                           double sync_slop_s)
+  {
+    color_buffer_ = buffer;
+    color_sync_slop_s_ = sync_slop_s;
   }
 
   void KeyframeSelect::notifyKeyframeSelectWorker()
@@ -211,9 +221,31 @@ namespace vslam
       return;
     }
     kf.image_right = image.image_right;
+    if (color_buffer_)
+    {
+      // Non-blocking: the color ring already holds recent frames, so a single
+      // lookup usually finds the pair. We deliberately do NOT sleep here — the
+      // old 15×10 ms wait stalled the whole IR/dense pipeline whenever color
+      // was late or absent. A missed pair just leaves this keyframe without an
+      // RGB sibling, which the ledger records as rgb_name='' and the semantic
+      // indexer skips.
+      color_buffer_->lookup(kf.timestamp, color_sync_slop_s_, &kf.image_rgb);
+      if (kf.image_rgb.empty())
+      {
+        // Throttle: warn at most once every 5 s while color stays unavailable.
+        if (last_color_warn_time_ < 0.0 || kf.timestamp - last_color_warn_time_ >= 5.0)
+        {
+          last_color_warn_time_ = kf.timestamp;
+          PRINT_WARNING("[KF_SELECT]: No color frame within %.3f s of keyframe t=%.6f "
+                        "(gray will have no left_rgb sibling)\n",
+                        color_sync_slop_s_, kf.timestamp);
+        }
+      }
+    }
 
-    PRINT_INFO("[KF_SELECT]: Selected keyframe id=%llu t=%.6f\n", static_cast<unsigned long long>(kf.id),
-               kf.timestamp);
+    PRINT_INFO("[KF_SELECT]: Selected keyframe id=%llu t=%.6f rgb=%d\n",
+               static_cast<unsigned long long>(kf.id), kf.timestamp,
+               kf.image_rgb.empty() ? 0 : 1);
 
     KeyframeCallback callback;
     {

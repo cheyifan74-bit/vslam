@@ -240,6 +240,14 @@ dense_submap_max_frames: 40       # keyframes per TSDF submap; a loop moves subm
 dense_submap_max_distance_m: 4.0  # a keyframe farther than this from the submap anchor starts a new submap
 
 # ------------------------------------------------------------------
+# Semantic index (off for datasets without a separate color stream)
+semantic_enabled: false
+semantic_color_topic: "/camera/color/image_raw"
+semantic_color_sync_slop: 0.05
+semantic_color_buffer_size: 60
+semantic_siglip_model: "/home/cyf/vslam_ws/src/vslam/data/models/siglip2-so400m-patch14-384"
+semantic_topk: 5
+
 # Visualization (RViz / debugging output)
 # Keys that only affect published topics and how often the visualizers
 # refresh; they do not affect the estimation or mapping pipeline.

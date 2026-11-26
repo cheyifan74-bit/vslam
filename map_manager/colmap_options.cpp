@@ -254,6 +254,7 @@ namespace vslam
     reader.read("mapper_ba_min_window_images", ba_min_window_images);
     reader.read("mapper_ba_temporal_window_images", ba_temporal_window_images);
     reader.read("mapper_sparse_write_every_n", sparse_write_every_n);
+    reader.read("mapper_pending_max_frames", pending_max_frames);
     reader.read("mapper_capacity_enabled", capacity_enabled);
     reader.read("mapper_capacity_voxel_m", capacity_voxel_m);
     reader.read("mapper_capacity_view_angle_deg", capacity_view_angle_deg);

@@ -7,6 +7,7 @@
 #define VSLAM_MAP_MANAGER_MAP_H
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -90,15 +91,21 @@ namespace vslam
     std::string imagesDir() const;
     std::string imagesLeftDir() const;
     std::string imagesRightDir() const;
+    std::string imagesLeftRgbDir() const; ///< color RGB sibling of left_image/
     std::string masksLeftDir() const;
     std::string masksRightDir() const;
     std::string sparseDir() const;
+    std::string semanticDir() const; ///< <map>/semantic (SigLIP2 index)
+    std::string stateDir() const;    ///< <map>/state (keyframe lifecycle ledger)
 
-    /// e.g. 000012_1712345678901.png
-    std::string makeImageFileName(std::size_t frame_index, double timestamp_sec) const;
+    /// e.g. 000012_1712345678901.png — prefix is COLMAP image_id.
+    std::string makeImageFileName(uint32_t image_id, double timestamp_sec) const;
 
     /// Absolute path under left/right image folder.
     std::string makeImageAbsPath(bool left, const std::string &file_name) const;
+
+    /// Absolute path under left_rgb/ (same file_name as the IR/mono left image).
+    std::string makeLeftRgbAbsPath(const std::string &file_name) const;
 
     /// Relative COLMAP image name: left_image/xxx.png or right_image/xxx.png
     std::string makeImageRelativeName(bool left, const std::string &file_name) const;
@@ -121,9 +128,12 @@ namespace vslam
     std::string images_dir_;
     std::string images_left_dir_;
     std::string images_right_dir_;
+    std::string images_left_rgb_dir_;
     std::string masks_left_dir_;
     std::string masks_right_dir_;
     std::string sparse_dir_;
+    std::string semantic_dir_;
+    std::string state_dir_;
   };
 
 } // namespace vslam

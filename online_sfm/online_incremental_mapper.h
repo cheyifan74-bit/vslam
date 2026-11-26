@@ -129,6 +129,13 @@ class OnlineIncrementalMapper {
     return mode_ == SessionMode::kLocalizing;
   }
 
+  // True once the mapper has an initialized reconstruction (a registered
+  // anchor frame), which distinguishes "still waiting for the first pair"
+  // from "a registered map rejected this frame".
+  bool MapperInitialized() const {
+    return mapper_ != nullptr && mapper_->Initialized();
+  }
+
   // Flush the sparse model unconditionally (used on shutdown).
   void FlushSparse();
 

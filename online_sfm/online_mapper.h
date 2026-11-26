@@ -206,8 +206,8 @@ class OnlineMapper {
   std::vector<image_t> EnforceSpatialCapacity(
       const std::vector<image_t>& image_ids);
   // Deregister a keyframe and drop its mapper state. The database rows stay;
-  // the next resume skips it because it is no longer in the sparse model.
-  // `reason` / `score` go to culled_keyframes.txt for the database compaction.
+  // the caller (MapManager) deletes them and the image files via the state
+  // ledger, so no culled_keyframes.txt bookkeeping is needed here.
   bool RemoveKeyframe(image_t image_id,
                       const char* reason = "manual",
                       double score = 0.0);

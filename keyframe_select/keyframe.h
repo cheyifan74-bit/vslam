@@ -29,8 +29,9 @@ namespace vslam
     uint64_t id = 0;
     double timestamp = 0.0; ///< seconds, aligned with image stamp
     Pose3d pose;            ///< left-camera pose in global (converted from IMU pose)
-    cv::Mat image;          ///< left image clone
+    cv::Mat image;          ///< left image clone (IR / mono for Orbbec VIO)
     cv::Mat image_right;    ///< right image clone; empty when the camera is mono
+    cv::Mat image_rgb;      ///< color frame paired by timestamp; empty when unavailable
     int cam_id = 0;         ///< always 0 for now (left)
     std::string frame_id;   ///< pose frame name (e.g. "global")
 

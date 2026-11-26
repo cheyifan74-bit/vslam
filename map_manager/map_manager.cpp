@@ -10,6 +10,7 @@
 #include <exception>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -148,71 +149,40 @@ namespace vslam
   MapManager::~MapManager()
   {
     stopKeyframeConsumer();
-    // Finish the queued image files before compaction deletes culled ones.
+    // Finish the queued image files before deleting any uncommitted ones.
     image_writer_.reset();
     if (dense_mapper_)
     {
       dense_mapper_->stop();
     }
-    // Flush the frame(s) that sparse_write_every_n deferred, otherwise the
-    // next session resumes from a map missing the tail of this one.
+    // Flush the frame(s) that sparse_write_every_n deferred, so the next
+    // session resumes from a map that keeps this session's full committed tail.
     if (incremental_mapper_)
     {
       incremental_mapper_->FlushSparse();
-      if (map_ && config_.mapper.compact_database_on_exit)
-      {
-        std::vector<std::string> removed_names;
-        const std::size_t num_removed =
-            incremental_mapper_->CompactDatabase(&removed_names);
-        std::size_t num_files = 0;
-        for (const auto &name : removed_names)
-        {
-          std::error_code ec;
-          if (std::filesystem::remove(std::filesystem::path(map_->imagesDir()) / name, ec))
-          {
-            ++num_files;
-          }
-        }
-        PRINT_INFO("[MAP_MANAGER]: Compacted database: removed %zu culled keyframe(s), "
-                   "%zu image file(s)\n",
-                   num_removed, num_files);
-      }
     }
+    // Drop every keyframe that never became committed (pre-init candidates and
+    // culled frames) so a resumed session never sees pose-less DB rows.
+    gcUncommitted();
   }
 
-  std::size_t MapManager::nextFrameIndexFromDatabase(const Map &map) const
+  uint32_t MapManager::nextImageIdFromDatabase(const Map &map) const
   {
-    std::size_t next_index = 0;
+    uint32_t next_id = 1;
     try
     {
       colmap::DatabaseSession db(map.databasePath());
       for (const auto &image : db->ReadAllImages())
       {
-        const std::string &name = image.Name();
-        const auto slash = name.find_last_of('/');
-        const std::string base = slash == std::string::npos ? name : name.substr(slash + 1);
-        const auto underscore = base.find('_');
-        if (underscore == std::string::npos || underscore == 0)
-        {
-          continue;
-        }
-        try
-        {
-          const auto index = static_cast<std::size_t>(std::stoul(base.substr(0, underscore)));
-          next_index = std::max(next_index, index + 1);
-        }
-        catch (const std::exception &)
-        {
-          continue;
-        }
+        next_id = std::max(next_id, static_cast<uint32_t>(image.ImageId()) + 1);
       }
     }
     catch (const std::exception &e)
     {
-      PRINT_WARNING("[MAP_MANAGER]: could not read image names from database: %s\n",
+      PRINT_WARNING("[MAP_MANAGER]: could not read image ids from database: %s\n",
                     e.what());
     }
-    return next_index;
+    return next_id;
   }
 
   bool MapManager::createMap()
@@ -260,19 +230,33 @@ namespace vslam
         }
       }
     }
-    // Image names are index_timestamp.ext. Continue the numbering of whatever
-    // rows are already in the database, otherwise a saved image name (and with
-    // it its image_id) would be reused and overwritten.
-    frame_count_ = nextFrameIndexFromDatabase(*map_);
+
+    // Open the lifecycle ledger and reconcile it against DB/sparse. This
+    // migrates pre-ledger maps, drops crash leftovers and removes any
+    // pose-less DB row so resume never starts from inconsistent state.
+    store_ = std::make_unique<MapStore>();
+    if (!store_->open(map_->stateDir()))
+    {
+      PRINT_ERROR("[MAP_MANAGER]: failed to open the keyframe state ledger.\n");
+      incremental_mapper_.reset();
+      map_.reset();
+      store_.reset();
+      return false;
+    }
+    recoverState();
+
+    // File names use COLMAP image_id as the numeric prefix. Continue from
+    // max(existing image_id)+1 so resume never collisions on id or path.
+    frame_count_ = nextImageIdFromDatabase(*map_);
     if (map_->isResuming())
     {
-      PRINT_INFO("[MAP_MANAGER]: Resumed map, next frame index=%zu\n",
+      PRINT_INFO("[MAP_MANAGER]: Resumed map, next image_id=%zu\n",
                  frame_count_);
     }
-    else if (frame_count_ > 0)
+    else if (frame_count_ > 1)
     {
       PRINT_WARNING("[MAP_MANAGER]: Database already holds images, continuing "
-                    "frame numbering at %zu\n",
+                    "at image_id=%zu\n",
                     frame_count_);
     }
     PRINT_INFO("[MAP_MANAGER]: Map session created. SIFT use_gpu=%d gpu_index=%s "
@@ -323,12 +307,14 @@ namespace vslam
       }
       dense_mapper_->start();
     }
+    pending_frames_.clear();
     return true;
   }
 
   uint32_t MapManager::writeKeyframeImage(const Map &map,
                                           const Keyframe &keyframe,
-                                          const std::string &relative_name) const
+                                          const std::string &relative_name,
+                                          uint32_t image_id) const
   {
     try
     {
@@ -342,7 +328,13 @@ namespace vslam
                       relative_name.c_str());
           return 0;
         }
-        return existing->ImageId();
+        return static_cast<uint32_t>(existing->ImageId());
+      }
+      if (db->ExistsImage(static_cast<colmap::image_t>(image_id)))
+      {
+        PRINT_ERROR("[MAP_MANAGER]: image_id=%u already exists in database\n",
+                    static_cast<unsigned>(image_id));
+        return 0;
       }
 
       const colmap::camera_t camera_id =
@@ -355,14 +347,16 @@ namespace vslam
       }
 
       colmap::Image image;
+      image.SetImageId(static_cast<colmap::image_t>(image_id));
       image.SetName(relative_name);
       image.SetCameraId(camera_id);
-      const colmap::image_t image_id = db->WriteImage(image);
+      const colmap::image_t written =
+          db->WriteImage(image, /*use_image_id=*/true);
       PRINT_INFO("[MAP_MANAGER]: WriteImage name=%s image_id=%u camera_id=%u\n",
                  relative_name.c_str(),
-                 static_cast<unsigned>(image_id),
+                 static_cast<unsigned>(written),
                  static_cast<unsigned>(camera_id));
-      return image_id;
+      return static_cast<uint32_t>(written);
     }
     catch (const std::exception &e)
     {
@@ -375,20 +369,21 @@ namespace vslam
   {
     std::shared_ptr<Map> map;
     colmap::OnlineIncrementalMapper *mapper = nullptr;
-    std::size_t frame_index = 0;
+    uint32_t image_id = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       map = map_;
       mapper = incremental_mapper_.get();
-      if (!map || !map->isReady() || mapper == nullptr)
+      if (!map || !map->isReady() || mapper == nullptr || store_ == nullptr)
       {
-        PRINT_ERROR("[MAP_MANAGER]: addKeyframe failed, map/mapper is not ready.\n");
+        PRINT_ERROR("[MAP_MANAGER]: addKeyframe failed, map/mapper/store is not ready.\n");
         return false;
       }
-      frame_index = frame_count_;
+      image_id = static_cast<uint32_t>(frame_count_);
     }
 
-    const std::string file_name = map->makeImageFileName(frame_index, keyframe.timestamp);
+    // File name prefix == COLMAP image_id (e.g. 000120_ts.png ↔ image_id=120).
+    const std::string file_name = map->makeImageFileName(image_id, keyframe.timestamp);
     const std::string abs_path = map->makeImageAbsPath(/*left=*/true, file_name);
     const std::string relative_name = map->makeImageRelativeName(/*left=*/true, file_name);
 
@@ -400,24 +395,30 @@ namespace vslam
       return false;
     }
 
-    const uint32_t image_id = writeKeyframeImage(*map, keyframe, relative_name);
-    if (image_id == 0)
+    // 1. Record the candidate in the ledger, then write the COLMAP image row.
+    //    The image files are deferred until the frame is committed, so a frame
+    //    that fails or never registers leaves no files behind.
+    const bool have_rgb = !keyframe.image_rgb.empty();
+    const std::string rgb_name = have_rgb ? std::string("left_rgb/") + file_name : std::string();
+    if (!store_->insertPending(image_id, relative_name, rgb_name))
     {
+      PRINT_ERROR("[MAP_MANAGER]: insertPending failed for image_id=%u\n",
+                  static_cast<unsigned>(image_id));
       return false;
     }
-
+    const uint32_t written_id = writeKeyframeImage(*map, keyframe, relative_name, image_id);
+    if (written_id == 0)
+    {
+      store_->erase(image_id);
+      return false;
+    }
+    image_id = written_id;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      ++frame_count_;
+      frame_count_ = std::max(frame_count_, static_cast<std::size_t>(image_id) + 1);
     }
 
-    // The mapper works from memory; the files are only needed by later sessions.
-    image_writer_->enqueue(keyframe.image, abs_path);
-    if (!keyframe.image_right.empty())
-    {
-      image_writer_->enqueue(keyframe.image_right, map->makeImageAbsPath(/*left=*/false, file_name));
-    }
-
+    // 2. Process the frame from memory.
     const std::optional<colmap::Rigid3d> vio_prior = vioCamFromWorld(keyframe.pose);
     bool processed = false;
     colmap::MappingFrameResult mapping_result;
@@ -433,28 +434,269 @@ namespace vslam
                                         dense_mapper_->trackedIds());
       }
     }
-    if (dense_mapper_)
+
+    // 3. Commit / keep-pending / rollback.
+    bool kept = false;
+    if (!processed)
+    {
+      PRINT_WARNING("[MAP_MANAGER]: Process failed for image_id=%u, discarding.\n",
+                    static_cast<unsigned>(image_id));
+      discardKeyframe(image_id);
+      return false;
+    }
+
+    if (mapping_result.registered)
+    {
+      commitKeyframe(image_id, file_name, keyframe);
+      kept = true;
+      // Initialization registers the partner together with the current frame;
+      // promote any pending candidate that just acquired a pose.
+      for (auto it = pending_frames_.begin(); it != pending_frames_.end();)
+      {
+        bool now_registered = false;
+        {
+          std::lock_guard<std::mutex> mapper_lock(mapper_mutex_);
+          const colmap::Reconstruction &rec = mapper->GetReconstruction();
+          now_registered = rec.ExistsImage(it->image_id) && rec.Image(it->image_id).HasPose();
+        }
+        if (now_registered)
+        {
+          commitKeyframe(it->image_id, it->file_name, it->kf);
+          it = pending_frames_.erase(it);
+        }
+        else
+        {
+          ++it;
+        }
+      }
+      // Once the mapper is initialized, any candidate still waiting for a pose
+      // will never acquire one: roll it back so it does not linger in the DB.
+      for (auto &pf : pending_frames_)
+      {
+        discardKeyframe(pf.image_id);
+      }
+      pending_frames_.clear();
+    }
+    else if (!mapper->MapperInitialized() && !mapper->WaitingForRelocalization())
+    {
+      // Fresh map still waiting for the first successful pair: keep the frame as
+      // a bounded candidate, evicting the oldest beyond the configured limit.
+      pending_frames_.push_back(PendingFrame{image_id, file_name, keyframe});
+      const std::size_t max_pending =
+          static_cast<std::size_t>(std::max(1, config_.mapper.pending_max_frames));
+      while (pending_frames_.size() > max_pending)
+      {
+        const PendingFrame oldest = pending_frames_.front();
+        pending_frames_.pop_front();
+        discardKeyframe(oldest.image_id);
+      }
+      kept = true;
+    }
+    else
+    {
+      // Relocalization failed or a registered map rejected the frame: roll back.
+      discardKeyframe(image_id);
+    }
+
+    if (dense_mapper_ && kept)
     {
       dense_mapper_->submit(image_id, mapping_result.registered, keyframe.image,
                             keyframe.image_right, dense_input.cam_from_world,
                             mapping_result.removed_ids, mapping_result.redundant_ids,
                             dense_input.pose_updates, dense_input.sparse_xyz);
     }
-    if (!processed)
+
+    // 4. Capacity cull: a replaced keyframe is fully deleted (DB row, features,
+    //    image files and ledger entry) instead of waiting for exit compaction.
+    if (!mapping_result.removed_ids.empty())
     {
-      PRINT_WARNING("[MAP_MANAGER]: Process failed for image_id=%u (image is in DB)\n",
-                    static_cast<unsigned>(image_id));
+      std::size_t num_culled = 0;
+      for (const auto id : mapping_result.removed_ids)
+      {
+        KeyframeRecord rec;
+        if (store_->getRecord(static_cast<uint32_t>(id), &rec))
+        {
+          deleteImageFiles(rec.name);
+        }
+        discardKeyframe(static_cast<uint32_t>(id));
+        ++num_culled;
+      }
+      PRINT_INFO("[MAP_MANAGER]: Capacity cull removed %zu keyframe(s)\n", num_culled);
     }
+
     // Visualization is published by the wrapper's timer (viz_dirty_ marks the
     // change). Publishing here made a backlog after a loop closure send one huge
     // map message per queued keyframe, which starved the VIO publishers.
 
-    PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s image_id=%u (total=%zu)\n",
+    PRINT_INFO("[MAP_MANAGER]: Saved keyframe id=%llu -> %s image_id=%u registered=%d\n",
                static_cast<unsigned long long>(keyframe.id),
                relative_name.c_str(),
                static_cast<unsigned>(image_id),
-               frame_index + 1);
-    return true;
+               static_cast<int>(mapping_result.registered));
+    return kept;
+  }
+
+  void MapManager::discardKeyframe(uint32_t image_id)
+  {
+    if (!map_ || !store_)
+    {
+      return;
+    }
+    try
+    {
+      colmap::DatabaseSession db(map_->databasePath());
+      if (db->ExistsImage(image_id))
+      {
+        db->DeleteImageData(image_id);
+      }
+    }
+    catch (const std::exception &e)
+    {
+      PRINT_WARNING("[MAP_MANAGER]: discard image_id=%u DB cleanup failed: %s\n",
+                    static_cast<unsigned>(image_id), e.what());
+    }
+    store_->erase(image_id);
+  }
+
+  void MapManager::deleteImageFiles(const std::string &name)
+  {
+    if (!map_)
+    {
+      return;
+    }
+    std::string file_name = name;
+    const auto slash = name.find_last_of('/');
+    if (slash != std::string::npos)
+    {
+      file_name = name.substr(slash + 1);
+    }
+    std::error_code ec;
+    std::filesystem::remove(map_->makeImageAbsPath(/*left=*/true, file_name), ec);
+    std::filesystem::remove(map_->makeImageAbsPath(/*left=*/false, file_name), ec);
+    std::filesystem::remove(map_->makeLeftRgbAbsPath(file_name), ec);
+  }
+
+  void MapManager::commitKeyframe(uint32_t image_id, const std::string &file_name,
+                                  const Keyframe &keyframe)
+  {
+    // The frame is registered: write its images and flip the ledger state.
+    image_writer_->enqueue(keyframe.image, map_->makeImageAbsPath(/*left=*/true, file_name));
+    if (!keyframe.image_right.empty())
+    {
+      image_writer_->enqueue(keyframe.image_right, map_->makeImageAbsPath(/*left=*/false, file_name));
+    }
+    if (!keyframe.image_rgb.empty())
+    {
+      image_writer_->enqueue(keyframe.image_rgb, map_->makeLeftRgbAbsPath(file_name));
+    }
+    store_->setState(image_id, "committed");
+  }
+
+  void MapManager::recoverState()
+  {
+    if (!map_ || !store_)
+    {
+      return;
+    }
+    std::set<uint32_t> registered;
+    if (incremental_mapper_)
+    {
+      for (const auto id : incremental_mapper_->GetReconstruction().RegImageIds())
+      {
+        registered.insert(static_cast<uint32_t>(id));
+      }
+    }
+
+    const auto records = store_->records();
+    std::set<uint32_t> known;
+    for (const auto &r : records)
+    {
+      known.insert(r.image_id);
+      if (r.state == "committed")
+      {
+        continue;
+      }
+      if (r.state == "pending" && registered.count(r.image_id) > 0)
+      {
+        // Crashed after registration but before the commit was recorded.
+        store_->setState(r.image_id, "committed");
+        continue;
+      }
+      // pending (still pose-less) and culled → drop from DB and disk.
+      deleteImageFiles(r.name);
+      discardKeyframe(r.image_id);
+    }
+
+    // DB rows without a ledger entry: adopt registered ones, drop the rest.
+    std::set<uint32_t> db_ids;
+    try
+    {
+      colmap::DatabaseSession db(map_->databasePath());
+      for (const auto &img : db->ReadAllImages())
+      {
+        db_ids.insert(static_cast<uint32_t>(img.ImageId()));
+      }
+    }
+    catch (const std::exception &e)
+    {
+      PRINT_WARNING("[MAP_MANAGER]: recoverState DB scan failed: %s\n", e.what());
+      return;
+    }
+    for (const auto id : db_ids)
+    {
+      if (known.count(id) > 0)
+      {
+        continue;
+      }
+      if (registered.count(id) > 0)
+      {
+        // Backfill a ledger entry for a pre-ledger registered frame.
+        std::string name;
+        try
+        {
+          colmap::DatabaseSession db(map_->databasePath());
+          name = db->ReadImage(id).Name();
+        }
+        catch (const std::exception &)
+        {
+        }
+        std::string base = name;
+        const auto slash = name.find_last_of('/');
+        if (slash != std::string::npos)
+        {
+          base = name.substr(slash + 1);
+        }
+        store_->insertPending(id, name, std::string("left_rgb/") + base);
+        store_->setState(id, "committed");
+      }
+      else
+      {
+        discardKeyframe(id);
+      }
+    }
+  }
+
+  void MapManager::gcUncommitted()
+  {
+    if (!map_ || !store_)
+    {
+      return;
+    }
+    std::size_t num = 0;
+    for (const auto &r : store_->records())
+    {
+      if (r.state == "committed")
+      {
+        continue;
+      }
+      deleteImageFiles(r.name);
+      discardKeyframe(r.image_id);
+      ++num;
+    }
+    if (num > 0)
+    {
+      PRINT_INFO("[MAP_MANAGER]: gc removed %zu uncommitted keyframe(s)\n", num);
+    }
   }
 
   void MapManager::startKeyframeConsumer(const std::shared_ptr<KeyframeQueue> &keyframe_queue)
@@ -588,6 +830,7 @@ namespace vslam
     mapper.load(reader);
     loop.load(reader);
     dense.load(reader);
+    semantic.load(reader);
   }
 
 } // namespace vslam

@@ -7,7 +7,11 @@
  * @Reference:
  */
 #include "application.h"
+
+#include <algorithm>
+
 #include "keyframe_select/keyframe_select.h"
+#include "semantic_index/color_image_buffer.h"
 #include "utility/config_reader.h"
 
 #include "utils/opencv_yaml_parse.h"
@@ -74,6 +78,16 @@ namespace vslam
   const MapVizConfig &Application::getMapVizConfig() const
   {
     return map_viz_config_;
+  }
+
+  std::shared_ptr<ColorImageBuffer> Application::getColorImageBuffer() const
+  {
+    return color_image_buffer_;
+  }
+
+  const SemanticConfig &Application::getSemanticConfig() const
+  {
+    return map_config_.semantic;
   }
 
   std::string Application::resolveVslamConfigPath(const std::string &estimator_config_path)
@@ -178,6 +192,16 @@ namespace vslam
   void Application::initKeyframeSelect()
   {
     keyframe_select_ = std::make_shared<KeyframeSelect>(kf_config_);
+    if (map_config_.semantic.enabled && map_config_.semantic.color_enabled)
+    {
+      const int buf = std::max(1, map_config_.semantic.color_buffer_size);
+      color_image_buffer_ = std::make_shared<ColorImageBuffer>(static_cast<std::size_t>(buf));
+      keyframe_select_->setColorImageBuffer(color_image_buffer_,
+                                            map_config_.semantic.color_sync_slop);
+      PRINT_INFO("[APP]: Semantic color buffer enabled (size=%d, slop=%.3f s, topic=%s)\n",
+                 buf, map_config_.semantic.color_sync_slop,
+                 map_config_.semantic.color_topic.c_str());
+    }
     PRINT_INFO("[APP]: KeyframeSelect module created.\n");
   }
 

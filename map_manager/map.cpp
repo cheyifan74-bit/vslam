@@ -33,9 +33,12 @@ namespace vslam
     images_dir_ = (fs::path(map_dir_) / "images").string();
     images_left_dir_ = (fs::path(images_dir_) / "left_image").string();
     images_right_dir_ = (fs::path(images_dir_) / "right_image").string();
+    images_left_rgb_dir_ = (fs::path(images_dir_) / "left_rgb").string();
     masks_left_dir_ = (fs::path(map_dir_) / "masks" / "left_image").string();
     masks_right_dir_ = (fs::path(map_dir_) / "masks" / "right_image").string();
     sparse_dir_ = (fs::path(map_dir_) / "sparse").string();
+    semantic_dir_ = (fs::path(map_dir_) / "semantic").string();
+    state_dir_ = (fs::path(map_dir_) / "state").string();
   }
 
   bool Map::initialize()
@@ -122,32 +125,16 @@ namespace vslam
 
   bool Map::clearOldSession() const
   {
+    // Starting a fresh session: remove the whole map directory so nothing from
+    // the previous run survives (database, sparse, dense, left/right/RGB images,
+    // masks, semantic index and the state ledger). remove_all is idempotent, so
+    // a crash mid-cleanup is repaired on the next start.
     try
     {
-      if (fs::exists(database_path_))
+      if (fs::exists(map_dir_))
       {
-        fs::remove(database_path_);
-        PRINT_INFO("[MAP]: Removed old database\n");
-      }
-      for (const char *ext : {"-wal", "-shm"})
-      {
-        const fs::path side = database_path_ + ext;
-        if (fs::exists(side))
-        {
-          fs::remove(side);
-        }
-      }
-      if (fs::exists(sparse_dir_))
-      {
-        fs::remove_all(sparse_dir_);
-        PRINT_INFO("[MAP]: Removed old sparse dir\n");
-      }
-      // Dense depth frames and TSDF submaps belong to the old image ids.
-      const fs::path dense_dir = fs::path(map_dir_) / "dense";
-      if (fs::exists(dense_dir))
-      {
-        fs::remove_all(dense_dir);
-        PRINT_INFO("[MAP]: Removed old dense dir\n");
+        fs::remove_all(map_dir_);
+        PRINT_INFO("[MAP]: Removed old session under %s\n", map_dir_.c_str());
       }
     }
     catch (const fs::filesystem_error &e)
@@ -167,9 +154,12 @@ namespace vslam
         images_dir_,
         images_left_dir_,
         images_right_dir_,
+        images_left_rgb_dir_,
         masks_left_dir_,
         masks_right_dir_,
         sparse_dir_,
+        semantic_dir_,
+        state_dir_,
     };
 
     try
@@ -266,15 +256,18 @@ namespace vslam
   std::string Map::imagesDir() const { return images_dir_; }
   std::string Map::imagesLeftDir() const { return images_left_dir_; }
   std::string Map::imagesRightDir() const { return images_right_dir_; }
+  std::string Map::imagesLeftRgbDir() const { return images_left_rgb_dir_; }
   std::string Map::masksLeftDir() const { return masks_left_dir_; }
   std::string Map::masksRightDir() const { return masks_right_dir_; }
   std::string Map::sparseDir() const { return sparse_dir_; }
+  std::string Map::semanticDir() const { return semantic_dir_; }
+  std::string Map::stateDir() const { return state_dir_; }
 
-  std::string Map::makeImageFileName(std::size_t frame_index, double timestamp_sec) const
+  std::string Map::makeImageFileName(uint32_t image_id, double timestamp_sec) const
   {
     const auto ts_ms = static_cast<std::int64_t>(timestamp_sec * 1000.0);
     std::ostringstream oss;
-    oss << std::setw(6) << std::setfill('0') << frame_index << "_" << ts_ms << "."
+    oss << std::setw(6) << std::setfill('0') << image_id << "_" << ts_ms << "."
         << config_.image_extension;
     return oss.str();
   }
@@ -282,6 +275,11 @@ namespace vslam
   std::string Map::makeImageAbsPath(bool left, const std::string &file_name) const
   {
     return (fs::path(left ? images_left_dir_ : images_right_dir_) / file_name).string();
+  }
+
+  std::string Map::makeLeftRgbAbsPath(const std::string &file_name) const
+  {
+    return (fs::path(images_left_rgb_dir_) / file_name).string();
   }
 
   std::string Map::makeImageRelativeName(bool left, const std::string &file_name) const

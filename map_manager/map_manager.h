@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -24,6 +25,8 @@
 #include "keyframe_select/keyframe.h"
 #include "keyframe_select/keyframe_queue.h"
 #include "map_manager/map.h"
+#include "map_manager/map_store.h"
+#include "semantic_index/semantic_event_writer.h"
 #include "visualization/map_viz_types.h"
 
 namespace colmap
@@ -126,6 +129,9 @@ namespace vslam
     int ba_min_window_images = 4;
     int ba_temporal_window_images = 5;
     int sparse_write_every_n = 10;
+    /// Maximum number of pre-initialization keyframes kept on disk waiting for
+    /// the first successful registration. Excess candidates are rolled back.
+    int pending_max_frames = 5;
     bool capacity_enabled = false;
     double capacity_voxel_m = 1.0;
     double capacity_view_angle_deg = 25.0;
@@ -202,6 +208,7 @@ namespace vslam
     MapperConfig mapper;
     LoopCloserConfig loop;
     DenseConfig dense;
+    SemanticConfig semantic;
 
     /// Reads every sub-config from vslam.yaml; cameras come from the estimator config.
     void load(ConfigReader &reader);
@@ -254,18 +261,40 @@ namespace vslam
 
   private:
     void keyframeConsumerLoop();
-    /// Next free image index parsed from the database image names, so a resumed
-    /// session never reuses an existing name (and therefore an image_id).
-    std::size_t nextFrameIndexFromDatabase(const Map &map) const;
-    /// Open DB (path lock) → WriteImage → Close. Returns COLMAP image_id, or 0 on failure.
+    /// Next free COLMAP image_id (= max existing id + 1, or 1 if empty).
+    uint32_t nextImageIdFromDatabase(const Map &map) const;
+    /// Open DB (path lock) → WriteImage(use_image_id) → Close.
+    /// Returns COLMAP image_id, or 0 on failure.
     uint32_t writeKeyframeImage(const Map &map,
                                 const Keyframe &keyframe,
-                                const std::string &relative_name) const;
+                                const std::string &relative_name,
+                                uint32_t image_id) const;
+    /// Delete the COLMAP image row + features and the state ledger entry.
+    void discardKeyframe(uint32_t image_id);
+    /// Remove left/right/RGB image files for a committed keyframe (idempotent).
+    void deleteImageFiles(const std::string &file_name);
+    /// Enqueue the keyframe images and flip its ledger state to committed.
+    void commitKeyframe(uint32_t image_id, const std::string &file_name,
+                        const Keyframe &keyframe);
+    /// Reconcile the state ledger against DB/sparse on startup.
+    void recoverState();
+    /// Delete every non-committed keyframe (pending/culled) from DB and disk.
+    void gcUncommitted();
+
+    /// Candidate keyframe held in memory while the mapper waits for the first
+    /// successful initialization (no pose yet, so its images are not written).
+    struct PendingFrame
+    {
+      uint32_t image_id = 0;
+      std::string file_name;
+      Keyframe kf;
+    };
 
     MapManagerConfig config_;
     std::shared_ptr<Map> map_;
     std::unique_ptr<colmap::OnlineIncrementalMapper> incremental_mapper_;
-    std::size_t frame_count_ = 0;
+    /// Next COLMAP image_id to assign (also used as the on-disk name prefix).
+    std::size_t frame_count_ = 1;
 
     std::shared_ptr<KeyframeQueue> keyframe_queue_;
     std::atomic<bool> stop_consumer_{false};
@@ -288,6 +317,10 @@ namespace vslam
     /// Nothing reads the files back during the session; they are for resume
     /// and offline use.
     std::unique_ptr<ImageWriter> image_writer_;
+    /// Keyframe lifecycle ledger (<map>/state/state.db).
+    std::unique_ptr<MapStore> store_;
+    /// Pre-initialization candidates awaiting their first pose.
+    std::deque<PendingFrame> pending_frames_;
   };
 
 } // namespace vslam

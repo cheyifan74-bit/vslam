@@ -15,6 +15,7 @@
 #include "core/VioManager.h"
 #include "keyframe_select/keyframe.h"
 #include "map_manager/map_manager.h"
+#include "semantic_index/semantic_event_writer.h"
 #include "visualization/map_viz_types.h"
 
 namespace vslam
@@ -22,6 +23,7 @@ namespace vslam
 
   class KeyframeSelect;
   class KeyframeQueue;
+  class ColorImageBuffer;
 
   class Application
   {
@@ -46,6 +48,10 @@ namespace vslam
     std::shared_ptr<MapManager> getMapManager() const;
     const MapManagerConfig &getMapManagerConfig() const;
     const MapVizConfig &getMapVizConfig() const;
+
+    /// Shared with RosWrapper (color feed) and KeyframeSelect (lookup).
+    std::shared_ptr<ColorImageBuffer> getColorImageBuffer() const;
+    const SemanticConfig &getSemanticConfig() const;
 
   private:
     /// Initializes the OpenVINS VIO system
@@ -81,6 +87,9 @@ namespace vslam
 
     /// Map management module
     std::shared_ptr<MapManager> map_manager_;
+
+    /// Color frames for semantic RGB pairing (Orbbec /camera/color/...).
+    std::shared_ptr<ColorImageBuffer> color_image_buffer_;
   };
 
 } // namespace vslam

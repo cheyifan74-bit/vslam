@@ -11,8 +11,11 @@
 #include <cstdlib>
 #include <mutex>
 
+#include <opencv2/imgproc.hpp>
+
 #include "app/application.h"
 #include "keyframe_select/keyframe_select.h"
+#include "semantic_index/color_image_buffer.h"
 #include "utility/math_utils.h"
 
 #include "core/VioManager.h"
@@ -239,6 +242,51 @@ namespace vslam
             [this, i](const ImageMsg::ConstSharedPtr msg) { callbackMonocular(msg, i); }, cam_options));
         PRINT_INFO("[ROS_WRAPPER]: Subscribing to mono cam%d: %s\n", i, cam_topic.c_str());
       }
+    }
+
+    if (app_->getSemanticConfig().enabled && app_->getSemanticConfig().color_enabled &&
+        app_->getColorImageBuffer())
+    {
+      cb_group_color_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+      rclcpp::SubscriptionOptions color_options;
+      color_options.callback_group = cb_group_color_;
+      const std::string color_topic = app_->getSemanticConfig().color_topic;
+      sub_color_ = node_->create_subscription<ImageMsg>(
+          color_topic, rclcpp::SensorDataQoS().keep_last(30),
+          [this](const ImageMsg::ConstSharedPtr msg) { callbackColor(msg); }, color_options);
+      PRINT_INFO("[ROS_WRAPPER]: Subscribing to color (semantic): %s\n", color_topic.c_str());
+    }
+    else if (app_->getSemanticConfig().enabled && !app_->getSemanticConfig().color_enabled)
+    {
+      PRINT_INFO("[ROS_WRAPPER]: semantic_color_enabled=false, color pairing disabled.\n");
+    }
+  }
+
+  void RosWrapper::callbackColor(const ImageMsg::ConstSharedPtr msg)
+  {
+    auto buffer = app_ ? app_->getColorImageBuffer() : nullptr;
+    if (!buffer)
+    {
+      return;
+    }
+    cv_bridge::CvImageConstPtr cv_ptr;
+    try
+    {
+      // Orbbec publishes rgb8; accept bgr8 too.
+      if (msg->encoding == sensor_msgs::image_encodings::RGB8)
+      {
+        cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::RGB8);
+        cv::Mat bgr;
+        cv::cvtColor(cv_ptr->image, bgr, cv::COLOR_RGB2BGR);
+        buffer->push(stampToSec(cv_ptr->header.stamp), bgr);
+        return;
+      }
+      cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
+      buffer->push(stampToSec(cv_ptr->header.stamp), cv_ptr->image.clone());
+    }
+    catch (cv_bridge::Exception &e)
+    {
+      PRINT_ERROR("[ROS_WRAPPER]: cv_bridge exception for color: %s\n", e.what());
     }
   }
 

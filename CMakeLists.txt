@@ -286,7 +286,10 @@ add_executable(vslam_node
   map_manager/map.cpp
   map_manager/map_manager.cpp
   map_manager/image_writer.cpp
+  map_manager/map_store.cpp
   map_manager/colmap_options.cpp
+  semantic_index/color_image_buffer.cpp
+  semantic_index/semantic_event_writer.cpp
   utility/math_utils.cpp
   utility/config_reader.cpp
   visualization/map_snapshot.cpp
@@ -304,6 +307,7 @@ target_link_libraries(vslam_node
   ${Boost_LIBRARIES}
   CUDA::cudart
   ${VSLAM_NVINFER}
+  sqlite3
 )
 
 if(OpenMP_CXX_FOUND)
@@ -403,6 +407,11 @@ if(VSLAM_ROS_VERSION EQUAL 1)
   install(DIRECTORY launch/
     DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
   )
+  install(PROGRAMS
+    scripts/semantic_index_node.py
+    scripts/download_siglip2.py
+    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
 else()
   install(TARGETS vslam_node
     RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -413,6 +422,12 @@ else()
   )
   install(DIRECTORY launch/
     DESTINATION share/${PROJECT_NAME}/launch
+  )
+
+  install(PROGRAMS
+    scripts/semantic_index_node.py
+    scripts/download_siglip2.py
+    DESTINATION lib/${PROJECT_NAME}
   )
 
   ament_package()

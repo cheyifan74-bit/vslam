@@ -5,12 +5,30 @@
  */
 #include "map_manager/image_writer.h"
 
+#include <cstdio>
+#include <filesystem>
+
 #include <opencv2/imgcodecs.hpp>
 
 #include "utils/print.h"
 
 namespace vslam
 {
+  namespace
+  {
+    /// <dir>/000012_ts.png → <dir>/000012_ts.tmp.png. The ".png" suffix must
+    /// stay so cv::imwrite can infer the encoder; rename is atomic and cheap.
+    std::string tmpPathFor(const std::string &path)
+    {
+      const std::size_t dot = path.find_last_of('.');
+      if (dot == std::string::npos)
+      {
+        return path + ".tmp";
+      }
+      return path.substr(0, dot) + ".tmp" + path.substr(dot);
+    }
+  } // namespace
+
 
   ImageWriter::ImageWriter() : thread_(&ImageWriter::run, this) {}
 
@@ -65,9 +83,24 @@ namespace vslam
 
       try
       {
-        if (!cv::imwrite(item.second, item.first))
+        // Write to a sibling temp file, then atomically rename, so a crash or a
+        // reader (semantic indexer) never sees a half-written PNG.
+        const std::string tmp_path = tmpPathFor(item.second);
+        if (cv::imwrite(tmp_path, item.first))
         {
-          PRINT_ERROR("[IMAGE_WRITER]: cv::imwrite failed: %s\n", item.second.c_str());
+          if (std::rename(tmp_path.c_str(), item.second.c_str()) != 0)
+          {
+            PRINT_ERROR("[IMAGE_WRITER]: rename failed: %s -> %s\n",
+                        tmp_path.c_str(), item.second.c_str());
+            std::error_code ec;
+            std::filesystem::remove(tmp_path, ec);
+          }
+        }
+        else
+        {
+          PRINT_ERROR("[IMAGE_WRITER]: cv::imwrite failed: %s\n", tmp_path.c_str());
+          std::error_code ec;
+          std::filesystem::remove(tmp_path, ec);
         }
       }
       catch (const cv::Exception &e)

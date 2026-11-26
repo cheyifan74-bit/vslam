@@ -29,6 +29,8 @@
 namespace vslam
 {
 
+  class ColorImageBuffer;
+
   /// ROS-free keyframe selection with a dedicated worker thread:
   ///   feedImage / feedPose (enqueue only) → worker → KeyframeQueue
   class KeyframeSelect
@@ -52,6 +54,10 @@ namespace vslam
 
     /// Enqueue pose. Non-blocking aside from lock.
     void feedPose(double timestamp, const Pose3d &pose, const std::string &frame_id = "global");
+
+    /// Optional color buffer: when set, selected keyframes attach a time-synced RGB.
+    void setColorImageBuffer(const std::shared_ptr<ColorImageBuffer> &buffer,
+                             double sync_slop_s = 0.05);
 
     /// Optional callback invoked on the worker thread after a keyframe is selected.
     void setKeyframeSelectedCallback(KeyframeCallback callback);
@@ -87,6 +93,8 @@ namespace vslam
     KeyframeSelectConfig select_config_;
     KeyframeSelector keyframe_selector_;
     std::shared_ptr<KeyframeQueue> keyframe_queue_;
+    std::shared_ptr<ColorImageBuffer> color_buffer_;
+    double color_sync_slop_s_ = 0.05;
 
     mutable std::mutex sync_buffer_mutex_;
     std::condition_variable worker_condition_;
@@ -94,6 +102,8 @@ namespace vslam
     /// Images dropped by age since the last warning; guarded by sync_buffer_mutex_.
     size_t aged_out_images_ = 0;
     double last_age_warn_time_ = -1.0;
+    /// Timestamp of the last "no color frame" warning; worker-thread only.
+    double last_color_warn_time_ = -1.0;
     std::deque<StampedPose, Eigen::aligned_allocator<StampedPose>> pose_buffer_;
     bool has_pending_work_ = false;
     std::atomic<bool> stop_worker_{false};

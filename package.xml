@@ -23,6 +23,8 @@
   <exec_depend condition="$ROS_VERSION == 2">launch_ros</exec_depend>
   <exec_depend condition="$ROS_VERSION == 2">rviz2</exec_depend>
   <exec_depend condition="$ROS_VERSION == 2">ros2bag</exec_depend>
+  <!-- semantic_index_node.py (SigLIP2); install torch/transformers/Pillow yourself -->
+  <exec_depend condition="$ROS_VERSION == 2">rclpy</exec_depend>
 
   <!-- Both -->
   <depend>sensor_msgs</depend>

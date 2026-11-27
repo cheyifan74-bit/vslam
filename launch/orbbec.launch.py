@@ -173,6 +173,8 @@ def launch_setup(context):
             "dosemantic": LaunchConfiguration("dosemantic"),
             "map_root": LaunchConfiguration("map_root"),
             "semantic_device": LaunchConfiguration("semantic_device"),
+            "semantic_min_score": LaunchConfiguration("semantic_min_score"),
+            "semantic_cloud_topic": LaunchConfiguration("semantic_cloud_topic"),
         }.items(),
     )
 
@@ -206,6 +208,9 @@ def generate_launch_description():
         DeclareLaunchArgument("dosemantic", default_value="true"),
         DeclareLaunchArgument("map_root", default_value="/tmp/vslam_map"),
         DeclareLaunchArgument("semantic_device", default_value="cpu"),
+        # SAM3 3D mask confidence threshold (0..1). Lower = accept weaker masks.
+        DeclareLaunchArgument("semantic_min_score", default_value="0.5"),
+        DeclareLaunchArgument("semantic_cloud_topic", default_value="semantic_cloud"),
         # 相机点云 (仅 RViz 查看用)
         DeclareLaunchArgument("pointcloud", default_value="false"),
         # 主动红外激光: off / low / full / interleave(硬件帧交错开/关)

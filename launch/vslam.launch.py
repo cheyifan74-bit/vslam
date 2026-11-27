@@ -47,6 +47,9 @@ launch_args = [
     ),
     DeclareLaunchArgument("semantic_topk", default_value="5"),
     DeclareLaunchArgument("semantic_device", default_value="cpu"),
+    # SAM3 3D localization: reject masks with confidence below this (0..1).
+    DeclareLaunchArgument("semantic_min_score", default_value="0.5"),
+    DeclareLaunchArgument("semantic_cloud_topic", default_value="semantic_cloud"),
 ]
 
 
@@ -110,6 +113,8 @@ def launch_setup(context):
             "--model", LaunchConfiguration("semantic_model"),
             "--topk", LaunchConfiguration("semantic_topk"),
             "--device", LaunchConfiguration("semantic_device"),
+            "--min-sam3-score", LaunchConfiguration("semantic_min_score"),
+            "--cloud-topic", LaunchConfiguration("semantic_cloud_topic"),
         ],
     )
 

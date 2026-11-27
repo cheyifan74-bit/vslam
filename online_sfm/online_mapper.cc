@@ -1366,10 +1366,10 @@ size_t OnlineMapper::AddGravityPriorsToBundle(
   return num_priors;
 }
 
-void OnlineMapper::AdjustLocalBundle(const image_t image_id) {
+std::vector<image_t> OnlineMapper::AdjustLocalBundle(const image_t image_id) {
   if (!reconstruction_->ExistsImage(image_id) ||
       !reconstruction_->Image(image_id).HasPose()) {
-    return;
+    return {};
   }
 
   std::vector<image_t> local_ids;
@@ -1410,7 +1410,7 @@ void OnlineMapper::AdjustLocalBundle(const image_t image_id) {
     LOG(INFO) << "OnlineMapper: skip LBA image " << image_id
               << ", frames=" << local_ids.size()
               << " first=[" << JoinImageIds(first_level_ids) << "]";
-    return;
+    return {};
   }
 
   image_t oldest_id = local_ids.front();
@@ -1480,7 +1480,7 @@ void OnlineMapper::AdjustLocalBundle(const image_t image_id) {
   if (ba_config.NumImages() < 2 || ba_config.NumVariablePoints() == 0) {
     LOG(INFO) << "OnlineMapper: skip LBA, images=" << ba_config.NumImages()
               << " points=" << ba_config.NumVariablePoints();
-    return;
+    return {};
   }
 
   const Rigid3d pose_before = reconstruction_->Image(image_id).CamFromWorld();
@@ -1521,7 +1521,7 @@ void OnlineMapper::AdjustLocalBundle(const image_t image_id) {
                       /*reverted=*/false);
   if (!summary) {
     LOG(WARNING) << "OnlineMapper: LBA failed image " << image_id;
-    return;
+    return {};
   }
   if (!usable) {
     LOG(WARNING) << "OnlineMapper: LBA solution not usable image " << image_id
@@ -1548,6 +1548,7 @@ void OnlineMapper::AdjustLocalBundle(const image_t image_id) {
   triangulator_->CompleteImage(options_.triangulation, image_id);
   FlatHashSet<image_t> filter_ids(variable_ids.begin(), variable_ids.end());
   FilterPointsInImages(filter_ids);
+  return variable_ids;
 }
 
 void OnlineMapper::AdjustLoopBundle(const std::vector<image_t>& variable_ids,
@@ -2042,7 +2043,8 @@ void OnlineMapper::MaybeWriteSparse() {
 }
 
 bool OnlineMapper::MappingCurrentImage(const image_t image_id,
-                                       const std::optional<Rigid3d>& vio_prior) {
+                                       const std::optional<Rigid3d>& vio_prior,
+                                       std::vector<image_t>* lba_variable_ids) {
   if (!SyncReconstruction()) {
     return false;
   }
@@ -2083,7 +2085,11 @@ bool OnlineMapper::MappingCurrentImage(const image_t image_id,
   }
   TriangulateImage(image_id);
   MergeAndFilterPoints(image_id);
-  AdjustLocalBundle(image_id);
+  if (lba_variable_ids != nullptr) {
+    *lba_variable_ids = AdjustLocalBundle(image_id);
+  } else {
+    AdjustLocalBundle(image_id);
+  }
   MaybeWriteSparse();
   return true;
 }

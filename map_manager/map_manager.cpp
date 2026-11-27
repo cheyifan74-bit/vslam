@@ -123,14 +123,25 @@ namespace vslam
           }
         }
       }
-      // Loop corrections plus the latest poses of recent keyframes, which
-      // local BA keeps refining after they were submitted.
-      input.pose_updates.reserve(mapping_result.dirty_poses.size() + tracked_ids.size());
+      // Loop corrections + latest poses of recent keyframes + frames LBA just
+      // refined. Together these keep every dense keyframe's pose current.
+      input.pose_updates.reserve(mapping_result.dirty_poses.size() + tracked_ids.size() +
+                                 mapping_result.lba_variable_ids.size());
       for (const auto &item : mapping_result.dirty_poses)
       {
         input.pose_updates.emplace_back(item.first, RigidFromMappingPose(item.second));
       }
       for (const uint32_t id : tracked_ids)
+      {
+        if (reconstruction.ExistsImage(id) && reconstruction.Image(id).HasPose())
+        {
+          input.pose_updates.emplace_back(id, RigidFromRigid3d(reconstruction.Image(id).CamFromWorld()));
+        }
+      }
+      // Local BA optimizes a window (current + temporal + first-level covisible
+      // frames), which can include frames outside tracked_ids; push their
+      // refined pose so the on-disk keyframe pose is not left stale.
+      for (const uint32_t id : mapping_result.lba_variable_ids)
       {
         if (reconstruction.ExistsImage(id) && reconstruction.Image(id).HasPose())
         {

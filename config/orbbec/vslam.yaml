@@ -11,7 +11,7 @@
 # ------------------------------------------------------------------
 
 # Selection thresholds
-kf_dist_thresh: 0.8          # meters; select if translation from last KF exceeds this
+kf_dist_thresh: 0.5          # meters; select if translation from last KF exceeds this
 kf_angle_thresh_deg: 15.0    # degrees; select if rotation from last KF exceeds this
 
 # Image-pose timestamp sync
@@ -133,7 +133,7 @@ mapper_sparse_write_every_n: 10            # <=1 writes sparse every keyframe; i
 # camera center plus a viewing direction. The newest keyframe in a cell
 # replaces the older ones, so the map keeps the latest pass over the scene.
 mapper_capacity_enabled: true
-mapper_capacity_voxel_m: 0.8
+mapper_capacity_voxel_m: 0.5
 mapper_capacity_view_angle_deg: 15.0       # same cell when the optical axes differ by less than this
 mapper_capacity_max_per_cell: 1            # keyframes kept per cell; the newest stay
 # Delete culled / dropped keyframes from database.db and images/ on exit
@@ -242,7 +242,7 @@ dense_submap_max_distance_m: 4.0  # a keyframe farther than this from the submap
 # Semantic keyframe index (SigLIP2 text → top-K RGB keyframes)
 # Requires color:=true on orbbec.launch.py so /camera/color/image_raw is published.
 # Pre-download weights ONCE (node will not download at runtime):
-#   python3 scripts/download_siglip2.py
+#   python3 scripts/semantic3d/download_siglip2.py
 # Run: ros2 run vslam semantic_index_node.py --map-root /tmp/vslam_map
 # Query: ros2 topic pub /semantic_query std_msgs/String "{data: 'chair'}"
 # ------------------------------------------------------------------

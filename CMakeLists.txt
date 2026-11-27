@@ -408,8 +408,13 @@ if(VSLAM_ROS_VERSION EQUAL 1)
     DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
   )
   install(PROGRAMS
-    scripts/semantic_index_node.py
-    scripts/download_siglip2.py
+    scripts/semantic3d/semantic_index_node.py
+    scripts/semantic3d/download_siglip2.py
+    scripts/semantic3d/sam3_segmenter.py
+    scripts/semantic3d/localize3d.py
+    scripts/semantic3d/depth_reader.py
+    scripts/semantic3d/projection.py
+    scripts/semantic3d/model_paths.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
   )
 else()
@@ -425,8 +430,13 @@ else()
   )
 
   install(PROGRAMS
-    scripts/semantic_index_node.py
-    scripts/download_siglip2.py
+    scripts/semantic3d/semantic_index_node.py
+    scripts/semantic3d/download_siglip2.py
+    scripts/semantic3d/sam3_segmenter.py
+    scripts/semantic3d/localize3d.py
+    scripts/semantic3d/depth_reader.py
+    scripts/semantic3d/projection.py
+    scripts/semantic3d/model_paths.py
     DESTINATION lib/${PROJECT_NAME}
   )
 

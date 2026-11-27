@@ -2,8 +2,8 @@
 """Download SigLIP2 weights into data/models for offline / real-time use.
 
 Example:
-  python3 scripts/download_siglip2.py
-  python3 scripts/download_siglip2.py --out /home/cyf/vslam_ws/src/vslam/data/models/siglip2-so400m-patch14-384
+  python3 scripts/semantic3d/download_siglip2.py
+  python3 scripts/semantic3d/download_siglip2.py --out /home/cyf/vslam_ws/src/vslam/data/models/siglip2-so400m-patch14-384
 
 After this finishes, point semantic_siglip_model (or --model) at the local folder.
 The semantic_index_node loads with local_files_only=True and will NOT hit the network.
@@ -20,8 +20,8 @@ DEFAULT_REPO = "google/siglip2-so400m-patch14-384"
 
 
 def default_out() -> Path:
-    # scripts/ -> package root -> data/models/<name>
-    return Path(__file__).resolve().parents[1] / "data" / "models" / DEFAULT_REPO.split("/")[-1]
+    # scripts/semantic3d/ -> scripts/ -> package root -> data/models/<name>
+    return Path(__file__).resolve().parents[2] / "data" / "models" / DEFAULT_REPO.split("/")[-1]
 
 
 def main() -> int:

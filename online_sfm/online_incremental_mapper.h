@@ -63,6 +63,10 @@ struct MappingFrameResult {
   // Keyframes whose pose changed in this call (loop correction), with the pose
   // after the correction.
   std::vector<std::pair<image_t, MappingPose>> dirty_poses;
+  // Keyframes optimized by local BA in this call (ids only; the caller re-reads
+  // their current pose). Feeds the dense mapper so its keyframe poses stay
+  // current after LBA refinement, including frames outside tracked_ids.
+  std::vector<image_t> lba_variable_ids;
 };
 
 inline MappingPose PoseFromRigid3d(const Rigid3d& cam_from_world) {

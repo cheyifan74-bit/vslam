@@ -12,7 +12,7 @@ Prerequisites:
      (export does not need pytorch_lightning / MixVPR training deps)
 
 Example:
-  python3 tools/export_mixvpr_onnx.py \\
+  python3 scripts/export_mixvpr_onnx.py \\
     --mixvpr-root /home/aa/MixVPR \\
     --ckpt /home/aa/MixVPR/LOGS/resnet50_MixVPR_512_channels\\(256\\)_rows\\(2\\).ckpt \\
     --out /home/aa/vslam_ws/src/vslam/data/models/mixvpr_resnet50_512.onnx

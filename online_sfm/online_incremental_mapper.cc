@@ -594,7 +594,8 @@ bool OnlineIncrementalMapper::ProcessImpl(
     return handled;
   }
 
-  if (!mapper_->MappingCurrentImage(image_id, cam_from_world_prior)) {
+  std::vector<image_t> lba_variable_ids;
+  if (!mapper_->MappingCurrentImage(image_id, cam_from_world_prior, &lba_variable_ids)) {
     WriteMappingResult(image_id, {}, {}, mapping_result);
     return false;
   }
@@ -633,6 +634,9 @@ bool OnlineIncrementalMapper::ProcessImpl(
   }
 
   WriteMappingResult(image_id, removed_ids, dirty_ids, mapping_result);
+  if (mapping_result != nullptr) {
+    mapping_result->lba_variable_ids = std::move(lba_variable_ids);
+  }
   return true;
 }
 

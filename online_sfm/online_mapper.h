@@ -165,7 +165,8 @@ class OnlineMapper {
 
 
   bool MappingCurrentImage(image_t image_id,
-                           const std::optional<Rigid3d>& vio_prior);
+                           const std::optional<Rigid3d>& vio_prior,
+                           std::vector<image_t>* lba_variable_ids = nullptr);
 
   // Load `sparse_path_` from disk and rebuild the runtime state (observation
   // manager / triangulator) so mapping continues on the existing map.
@@ -292,7 +293,10 @@ class OnlineMapper {
   // triangulation angle is below filter_two_view_min_tri_angle.
   size_t FilterPointsInImages(const FlatHashSet<image_t>& image_ids);
   void MergeAndFilterPoints(image_t image_id);
-  void AdjustLocalBundle(image_t image_id);
+  /// Runs local BA for `image_id` and returns the frame ids it optimized
+  /// (empty when skipped). The caller feeds these to the dense mapper so the
+  /// on-disk keyframe poses stay current after LBA refinement.
+  std::vector<image_t> AdjustLocalBundle(image_t image_id);
   bool CollectRegisteredImage(image_t image_id,
                               std::vector<image_t>* images) const;
   void BuildCovisibilityBundle(image_t image_id,

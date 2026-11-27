@@ -18,7 +18,7 @@ main thread never blocks on a CUDA/CPU forward pass:
   - a frame that fails to encode is blacklisted immediately.
 
 Pre-download weights (once, offline from HF):
-  python3 scripts/download_siglip2.py
+  python3 scripts/semantic3d/download_siglip2.py
   # → data/models/siglip2-so400m-patch14-384/
 
 Query (ROS2):
@@ -45,11 +45,16 @@ import numpy as np
 try:
     import rclpy
     from rclpy.node import Node
-    from std_msgs.msg import String
+    from std_msgs.msg import String, Header
+    from sensor_msgs.msg import PointCloud2
+    from sensor_msgs_py import point_cloud2 as pc2
 except ImportError:  # pragma: no cover
     rclpy = None
     Node = object  # type: ignore
     String = None  # type: ignore
+    Header = None  # type: ignore
+    PointCloud2 = None  # type: ignore
+    pc2 = None  # type: ignore
 
 
 def _l2_normalize(x: np.ndarray, axis: int = -1, eps: float = 1e-12) -> np.ndarray:
@@ -58,7 +63,12 @@ def _l2_normalize(x: np.ndarray, axis: int = -1, eps: float = 1e-12) -> np.ndarr
 
 
 def _default_local_siglip2() -> Path:
-    return Path(__file__).resolve().parents[1] / "data" / "models" / "siglip2-so400m-patch14-384"
+    try:
+        from model_paths import default_siglip_dir
+
+        return default_siglip_dir()
+    except Exception:  # noqa: BLE001
+        return Path(__file__).resolve().parents[1] / "data" / "models" / "siglip2-so400m-patch14-384"
 
 
 def _resolve_local_model(model_id: str) -> Path:
@@ -70,13 +80,13 @@ def _resolve_local_model(model_id: str) -> Path:
     if not path.is_dir():
         raise FileNotFoundError(
             f"SigLIP2 local model dir not found: {path}\n"
-            f"Pre-download with: python3 scripts/download_siglip2.py\n"
+            f"Pre-download with: python3 scripts/semantic3d/download_siglip2.py\n"
             f"(expected default: {_default_local_siglip2()})"
         )
     if not (path / "config.json").is_file():
         raise FileNotFoundError(
             f"Incomplete SigLIP2 snapshot (missing config.json): {path}\n"
-            f"Re-run: python3 scripts/download_siglip2.py --out {path}"
+            f"Re-run: python3 scripts/semantic3d/download_siglip2.py --out {path}"
         )
     return path
 
@@ -98,18 +108,18 @@ class SigLIP2Index:
         self.torch = torch
         self.log = log
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            # SigLIP2 on CPU by default: the GPU is reserved for SAM3 + dense S2M2.
+            device = "cpu"
         self.device = device
         model_path = _resolve_local_model(model_id)
         self.model_id = str(model_path)
-        self.log(f"[SEMANTIC] Loading local SigLIP2 from {model_path} on {device} (fp16) ...")
+        self.log(f"[SEMANTIC] Loading local SigLIP2 from {model_path} on {device} (fp16 on cuda) ...")
         self.processor = AutoProcessor.from_pretrained(str(model_path), local_files_only=True)
         dtype = torch.float16 if device.startswith("cuda") else torch.float32
-        self.model = (
-            AutoModel.from_pretrained(str(model_path), local_files_only=True, torch_dtype=dtype)
-            .to(device)
-            .eval()
-        )
+        # Load on CPU first, then move + cast: avoids a fp32 VRAM spike and
+        # guarantees fp16 on GPU (transformers 5.x deprecates torch_dtype).
+        self.model = AutoModel.from_pretrained(str(model_path), local_files_only=True).eval()
+        self.model = self.model.to(device=device, dtype=dtype)
 
         # Shared state, guarded by _cv (worker writes, main thread reads).
         self._cv = threading.Condition()
@@ -614,7 +624,17 @@ class StateDbPoller:
 
 
 class SemanticIndexNode(Node if rclpy else object):
-    def __init__(self, map_root: str, model: str, topk: int, device: Optional[str]):
+    def __init__(
+        self,
+        map_root: str,
+        model: str,
+        topk: int,
+        device: Optional[str],
+        enable_3d: bool = True,
+        min_sam3_score: float = 0.5,
+        world_frame: str = "global",
+        cloud_topic: str = "semantic_cloud",
+    ):
         if rclpy:
             super().__init__("semantic_index_node")
 
@@ -626,6 +646,7 @@ class SemanticIndexNode(Node if rclpy else object):
             log = print
 
         self.map_root = Path(map_root)
+        self.map_dir = self.map_root / "map"
         self.semantic_dir = self.map_root / "map" / "semantic"
         self.state_db_path = self.map_root / "map" / "state" / "state.db"
         self.images_dir = self.map_root / "map" / "images"
@@ -636,15 +657,25 @@ class SemanticIndexNode(Node if rclpy else object):
         self.index.start()
         self.poller = StateDbPoller(self.state_db_path, self.images_dir, self.index, log=log)
 
+        # Stage-2 3D localization (SAM3 + IR depth). Loaded lazily on first query.
+        self.enable_3d = enable_3d
+        self.min_sam3_score = min_sam3_score
+        self.world_frame = world_frame
+        self._sam3 = None
+        self._sam3_tried = False
+        self._sam3_lock = threading.Lock()
+
         if rclpy:
             self.query_sub = self.create_subscription(String, "semantic_query", self._on_query, 10)
             self.result_pub = self.create_publisher(String, "semantic_result", 10)
+            self.cloud_pub = self.create_publisher(PointCloud2, cloud_topic, 1)
             # Reconcile is cheap (SQLite only): it enqueues encodes and drops culls.
             self.create_timer(0.5, self._on_poll)
             self.create_timer(10.0, self._periodic_save)
             self.get_logger().info(
                 f"Reading committed keyframes state={self.state_db_path} "
-                f"query=semantic_query topk={topk} device={self.index.device}"
+                f"query=semantic_query topk={topk} device={self.index.device} "
+                f"3d={enable_3d} cloud_topic={cloud_topic} frame={world_frame}"
             )
 
     def _on_poll(self) -> None:
@@ -661,7 +692,16 @@ class SemanticIndexNode(Node if rclpy else object):
         if not query:
             return
         # Answer on the worker thread; publish from the callback.
-        self.index.request_query(query, self.topk, lambda hits, q=query: self._publish_result(q, hits))
+        self.index.request_query(
+            query, self.topk, lambda hits, q=query: self._on_query_done(q, hits)
+        )
+
+    def _on_query_done(self, query: str, hits: List[Tuple[int, str, float]]) -> None:
+        # 1) retrieval ranking (JSON, no point cloud).
+        self._publish_result(query, hits)
+        # 2) 3D point cloud -> RViz (PointCloud2).
+        if rclpy:
+            self._publish_semantic_cloud(query, hits)
 
     def _publish_result(self, query: str, hits: List[Tuple[int, str, float]]) -> None:
         payload = {
@@ -683,6 +723,67 @@ class SemanticIndexNode(Node if rclpy else object):
             f"query={query!r} → " + ", ".join(f"{iid}:{score:.3f}" for iid, _, score in hits)
         )
 
+    def _ensure_sam3(self):
+        with self._sam3_lock:
+            if self._sam3_tried:
+                return self._sam3
+            self._sam3_tried = True
+            try:
+                from sam3_segmenter import SAM3Segmenter
+
+                self._sam3 = SAM3Segmenter(device="cuda", batch_size=2)
+                self.get_logger().info("SAM3 loaded for 3D localization")
+            except Exception as e:  # noqa: BLE001
+                self.get_logger().error(f"SAM3 unavailable, 3D disabled: {e}")
+                self._sam3 = None
+            return self._sam3
+
+    def _publish_semantic_cloud(self, query: str, hits: List[Tuple[int, str, float]]) -> None:
+        if not self.enable_3d:
+            return
+        sam3 = self._ensure_sam3()
+        if sam3 is None or not hits:
+            self._publish_cloud_msg(None)  # clear on no result
+            return
+        try:
+            from localize3d import localize3d_multi
+
+            ids = [int(iid) for iid, _, _ in hits]
+            scores = {int(iid): float(s) for iid, _, s in hits}
+            res = localize3d_multi(
+                query,
+                ids,
+                self.map_dir,
+                sam3,
+                retrieval_scores=scores,
+                top_k=self.topk,
+                voxel=0.02,
+                min_sam3_score=self.min_sam3_score,
+            )
+            self._publish_cloud_msg(res.get("point_cloud"))
+            self.get_logger().info(
+                f"cloud query={query!r} frames={res.get('num_frames')} points={res.get('num_points')} "
+                f"centroid={None if res.get('centroid') is None else res['centroid'].round(3).tolist()}"
+            )
+            for pf in res.get("per_frame", []):
+                self.get_logger().info(
+                    f"  id={pf['frame_id']} rgb={int(pf.get('has_rgb', False))} "
+                    f"depth={int(pf.get('has_depth', False))} sam3={pf['sam3_score']:.3f} "
+                    f"mask_px={pf.get('mask_px', 0)} cloud={0 if pf['point_cloud'] is None else len(pf['point_cloud'])}"
+                )
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().error(f"3D localization failed: {e}")
+
+    def _publish_cloud_msg(self, cloud) -> None:
+        if pc2 is None or self.cloud_pub is None:
+            return
+        hdr = Header()
+        hdr.stamp = self.get_clock().now().to_msg()
+        hdr.frame_id = self.world_frame
+        pts = [] if cloud is None else cloud.astype(np.float32).tolist()
+        msg = pc2.create_cloud_xyz32(hdr, pts)
+        self.cloud_pub.publish(msg)
+
     def _periodic_save(self) -> None:
         self.index.save(self.index_dir)
 
@@ -702,6 +803,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--device", default=None)
     parser.add_argument("--query", default="", help="One-shot offline query then exit")
+    parser.add_argument("--no-3d", dest="enable_3d", action="store_false", default=True,
+                        help="disable SAM3 3D localization / point cloud publishing")
+    parser.add_argument("--min-sam3-score", type=float, default=0.5,
+                        help="reject masks with SAM3 confidence below this")
+    parser.add_argument("--cloud-topic", default="semantic_cloud", help="PointCloud2 topic")
+    parser.add_argument("--world-frame", default="global", help="PointCloud2 frame_id")
     args, _ = parser.parse_known_args(argv)
 
     if args.query:
@@ -742,7 +849,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         raise SystemExit("rclpy not available; use --query for offline mode")
 
     rclpy.init(args=argv)
-    node = SemanticIndexNode(args.map_root, args.model, args.topk, args.device)
+    node = SemanticIndexNode(
+        args.map_root, args.model, args.topk, args.device,
+        enable_3d=args.enable_3d,
+        min_sam3_score=args.min_sam3_score,
+        world_frame=args.world_frame,
+        cloud_topic=args.cloud_topic,
+    )
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
